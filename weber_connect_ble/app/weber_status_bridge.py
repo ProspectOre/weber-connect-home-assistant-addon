@@ -279,7 +279,7 @@ def build_mqtt_publish_plan(
             "name": device_name,
             "manufacturer": "Weber",
             "model": hub.get("model") or "Connect Hub",
-            "sw_version": hub.get("software_revision"),
+            "sw_version": hub.get("software_revision") or "unknown",
         }
         origin = {
             "name": "Weber Connect BLE Bridge",
