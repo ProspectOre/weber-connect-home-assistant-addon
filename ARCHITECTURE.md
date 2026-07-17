@@ -24,10 +24,14 @@ HTTP adapter ──► Hub controller/state machine ──► BLE adapter ──
 - `weber_http.py` owns Home Assistant ingress, request limits, timeouts, static
   assets, security headers, and API dispatch.
 - `weber_mqtt.py` owns one reusable MQTT connection, bounded acknowledgements,
-  discovery delivery, availability, and retained state.
+  discovery delivery, availability, retained state, and the validated command
+  subscription used only when remote controls are enabled.
 - `weber_cloud.py` owns companion registration and authentication, appliance
   association, cook-session discovery, paged snapshots, and temperature
   normalization for Weber's private API.
+- `weber_cloud_socket.py` owns the binary companion WebSocket envelope, live
+  status and installed-program decoding, and the allowlisted active-session and
+  timer command payloads.
 - `weber_persistence.py` owns collision-safe atomic JSON replacement, private
   file modes, and file/directory fsync.
 - `weber_status_bridge.py`, `weber_ble_pair.py`, `weber_ble_scan.py`, and
@@ -78,10 +82,14 @@ normalization boundary publishes both Celsius and Fahrenheit values.
    uses the configured last will.
 10. BLE is preferred whenever available. Cloud polling occurs only after opt-in
     and when BLE is handed off or unavailable.
-11. The cloud path is telemetry-only: no Wi-Fi provisioning, recipe start,
-    target modification, timer modification, or grill control.
+11. Cloud monitoring is always available after cloud opt-in. Remote commands
+    require a second opt-in and are allowlisted to active-cook confirm/stop and
+    timer start/reset. Wi-Fi provisioning, recipe installation/start, target
+    changes, ignition, and grill-mode control remain out of scope.
 12. Authentication success alone is insufficient; setup verifies that the
     identity can access the paired appliance.
+13. Disabling or removing cloud access closes the live socket, disables remote
+    commands, and removes their retained discovery entities.
 
 ## Verification
 

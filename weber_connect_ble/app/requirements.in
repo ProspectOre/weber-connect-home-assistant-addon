@@ -4,3 +4,4 @@
 bleak==3.0.2
 cryptography==49.0.0
 paho-mqtt==2.1.0
+websockets==16.1

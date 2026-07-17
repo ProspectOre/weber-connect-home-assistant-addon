@@ -28,8 +28,11 @@ Run the complete local gate before opening a pull request:
 
 - BLE remains the preferred transport and only one bridge BLE operation may own
   the hub at a time.
-- Cloud behavior remains opt-in and read-only. New cloud code must not start
-  recipes, modify targets/timers, configure Wi-Fi, or issue grill controls.
+- Cloud access remains opt-in. Monitoring may read live sessions, installed
+  programs, and cook history. Remote commands must remain separately opt-in,
+  narrowly allowlisted, validated, and covered by protocol tests. Do not add
+  recipe installation/start, target changes, Wi-Fi configuration, ignition, or
+  grill-mode controls without a new security review and explicit project scope.
 - Cloud authentication tests must verify appliance-scoped access; a successful
   companion login alone is not enough.
 - Generated companion credentials must remain private and must never appear in

@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "weber_connect_ble" / "app"
@@ -38,7 +39,9 @@ class FakeClient:
         self.client_id = client_id
         self.on_connect = None
         self.on_disconnect = None
+        self.on_message = None
         self.publications: list[tuple[str, str, int, bool]] = []
+        self.subscriptions: list[tuple[str, int]] = []
         self.connect_calls = 0
         self.loop_starts = 0
         self.loop_stops = 0
@@ -63,6 +66,9 @@ class FakeClient:
     def publish(self, topic, payload, qos, retain):
         self.publications.append((topic, payload, qos, retain))
         return FakePublishInfo()
+
+    def subscribe(self, topic, qos):
+        self.subscriptions.append((topic, qos))
 
     def loop_stop(self) -> None:
         self.loop_stops += 1
@@ -127,8 +133,9 @@ class MqttSessionTests(unittest.TestCase):
         ]
         self.assertEqual([row[1] for row in probe_availability], ["offline"])
         discovery = [row for row in client.publications if row[0].endswith("/config")]
-        # probe1 temp/state + connectivity + last_publish; deduped on republish.
-        self.assertEqual(len(discovery), 4)
+        # probe1 temp/state + cook monitoring + connectivity + last_publish;
+        # all discovery is deduped on republish.
+        self.assertEqual(len(discovery), 14)
         temperature = [row for row in discovery if row[0].endswith("_probe_1_temperature/config")]
         self.assertTrue(all("availability_topic" in row[1] for row in temperature))
         self.assertTrue(client.disconnected)
@@ -294,6 +301,91 @@ class MqttSessionTests(unittest.TestCase):
         self.assertEqual(len(clients), 2)
         self.assertTrue(all(client.disconnected for client in clients))
         self.assertEqual(clients[0].credentials, ("user", "secret"))
+
+    def test_command_subscription_decodes_messages_and_rejects_bad_input(self) -> None:
+        received: list[tuple[str, str]] = []
+        client = FakeClient("commands")
+        session = MqttSession(
+            MqttConfig(host="mqtt.local"),
+            self.summary(),
+            max_probes=1,
+            client_factory=lambda **_kwargs: client,
+            command_handler=lambda topic, payload: received.append((topic, payload)),
+        )
+        state = build_state(self.summary(), {}, "AA:BB:CC:DD:EE:FF", True, 1)
+
+        async def scenario() -> None:
+            await session.publish(state, 10)
+            assert client.on_message is not None
+            client.on_message(
+                client,
+                None,
+                SimpleNamespace(
+                    topic=f"{session.topic_root}/command/timer/1/start",
+                    payload=b"30",
+                ),
+            )
+            client.on_message(
+                client,
+                None,
+                SimpleNamespace(topic="bad", payload=b"\xff"),
+            )
+            await session.close()
+
+        asyncio.run(scenario())
+
+        self.assertEqual(
+            client.subscriptions,
+            [(f"{session.topic_root}/command/#", 1)],
+        )
+        self.assertEqual(
+            received,
+            [(f"{session.topic_root}/command/timer/1/start", "30")],
+        )
+
+    def test_disabling_controls_removes_only_control_discovery_once(self) -> None:
+        client = FakeClient("control-migration")
+        session = MqttSession(
+            MqttConfig(host="mqtt.local"),
+            self.summary(),
+            max_probes=1,
+            client_factory=lambda **_kwargs: client,
+        )
+        status = {
+            "active_cook": {"active": True, "title": "Brisket"},
+            "probe_count": 0,
+            "probes": [],
+        }
+        enabled = build_state(
+            self.summary(),
+            status,
+            "AA:BB:CC:DD:EE:FF",
+            True,
+            1,
+            remote_controls_enabled=True,
+        )
+        disabled = build_state(
+            self.summary(), status, "AA:BB:CC:DD:EE:FF", True, 1
+        )
+
+        async def scenario() -> None:
+            await session.publish(enabled, 10)
+            await session.publish(disabled, 10)
+            first_delete_count = len(
+                [row for row in client.publications if row[1] == "" and row[3]]
+            )
+            await session.publish(disabled, 10)
+            self.assertEqual(
+                len([row for row in client.publications if row[1] == "" and row[3]]),
+                first_delete_count,
+            )
+            await session.close()
+
+        asyncio.run(scenario())
+
+        deleted = [row for row in client.publications if row[1] == "" and row[3]]
+        self.assertEqual(len(deleted), 10)
+        self.assertTrue(all(row[0].endswith("/config") for row in deleted))
 
 
 if __name__ == "__main__":

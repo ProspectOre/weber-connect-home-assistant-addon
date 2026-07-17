@@ -114,6 +114,7 @@ class HubController:
         self._closing = False
         self._fatal_error: BaseException | None = None
         self._fatal_event = asyncio.Event()
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
         self._load()
 
@@ -125,6 +126,7 @@ class HubController:
         if self._closing:
             raise RuntimeError("controller is closing")
         self._started = True
+        self._event_loop = asyncio.get_running_loop()
         if self.runtime.handoff_active and self.runtime.handoff_until is not None:
             self.runtime.handoff_token += 1
             self._auto_resume_task = self._supervisor.spawn(
@@ -145,6 +147,7 @@ class HubController:
         self._wake.set()
         await self._supervisor.close()
         await self._close_mqtt()
+        await self._close_cloud_client()
         address = self.address
         if address:
             try:
@@ -327,6 +330,7 @@ class HubController:
             "address": self.address,
             "hub": (self.summary or {}).get("hub"),
             "probes": self.runtime.last_good_state.get("probes", []),
+            "active_cook": self.runtime.last_good_state.get("active_cook", {}),
             "probe_count": self.runtime.last_good_state.get("probe_count", 0),
             "max_probes": MAX_PROBES,
             "readings_stale": bool(self.runtime.last_good_state) and not self.runtime.last_read_ok,
@@ -360,6 +364,9 @@ class HubController:
                 "state": self.runtime.cloud_state,
                 "last_poll_at": self.runtime.cloud_last_poll_at,
                 "error": self.runtime.cloud_error,
+                "live_session_error": getattr(
+                    self._cloud_client, "socket_error", None
+                ),
                 "session_id": self.runtime.cloud_session_id,
                 "last_snapshot_id": self.runtime.cloud_after_id,
                 "new_snapshots": self.runtime.cloud_snapshot_count,
@@ -370,6 +377,14 @@ class HubController:
                     )
                 ),
             },
+            "controls": {
+                "enabled": self.settings.remote_controls_enabled,
+                "available": bool(
+                    self.runtime.last_good_state.get("cook_control_available")
+                ),
+                "last_command_at": self.runtime.control_last_command_at,
+                "error": self.runtime.control_error,
+            },
             "settings": {
                 "poll_seconds": self.settings.poll_seconds,
                 "handoff_minutes": self.settings.handoff_minutes,
@@ -377,6 +392,7 @@ class HubController:
                     str(number): name
                     for number, name in self.settings.probe_names.items()
                 },
+                "remote_controls_enabled": self.settings.remote_controls_enabled,
             },
         }
 
@@ -706,7 +722,7 @@ class HubController:
             self.runtime.next_retry_seconds = None
             self.runtime.candidates = []
             self.cloud_config = None
-            self._cloud_client = None
+            await self._close_cloud_client()
             self.runtime.cloud_state = "unconfigured"
             self.runtime.cloud_error = None
             for path in (
@@ -723,7 +739,15 @@ class HubController:
         return {"ok": True}
 
     async def update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("remote_controls_enabled") is True and (
+            self.cloud_config is None or not self.cloud_config.enabled
+        ):
+            return {
+                "ok": False,
+                "error": "Set up Weber app access before enabling remote cook controls.",
+            }
         previous_probe_names = self.settings.probe_names
+        previous_controls_enabled = self.settings.remote_controls_enabled
         try:
             updated = self.settings.updated(payload)
         except ValueError as exc:
@@ -731,7 +755,10 @@ class HubController:
         self.settings = updated
         self._save_settings()
         if (
-            updated.probe_names != previous_probe_names
+            (
+                updated.probe_names != previous_probe_names
+                or updated.remote_controls_enabled != previous_controls_enabled
+            )
             and self.runtime.last_good_state
             and self.summary is not None
             and self.address is not None
@@ -745,6 +772,7 @@ class HubController:
                 max_probes=MAX_PROBES,
                 source=self.runtime.last_source or str(current.get("source") or "ble"),
                 probe_names=updated.probe_names,
+                remote_controls_enabled=updated.remote_controls_enabled,
             )
             self.runtime.last_good_state = refreshed
             try:
@@ -758,8 +786,20 @@ class HubController:
     def _new_cloud_client(self) -> WeberCloudClient:
         if self.cloud_config is None:
             raise RuntimeError("Cloud fallback is not configured.")
+        if self._cloud_client is not None:
+            close = getattr(self._cloud_client, "close", None)
+            if callable(close):
+                close()
         self._cloud_client = self.dependencies.cloud_factory(self.cloud_config)
         return self._cloud_client
+
+    async def _close_cloud_client(self) -> None:
+        client, self._cloud_client = self._cloud_client, None
+        if client is None:
+            return
+        close = getattr(client, "close", None)
+        if callable(close):
+            await asyncio.to_thread(close)
 
     async def _verify_cloud_appliance_access(
         self,
@@ -951,13 +991,19 @@ class HubController:
                     raise ValueError("Cloud fallback is not configured.")
                 self.cloud_config = self.cloud_config.with_enabled(action == "enable")
                 self._save_cloud()
+                if action == "disable":
+                    await self._close_cloud_client()
+                    if self.settings.remote_controls_enabled:
+                        await self.update_settings({"remote_controls_enabled": False})
                 self.runtime.cloud_state = "ready" if action == "enable" else "disabled"
                 self.runtime.cloud_error = None
                 appliances = []
             elif action == "remove":
                 self.cloud_config = None
-                self._cloud_client = None
+                await self._close_cloud_client()
                 self._save_cloud()
+                if self.settings.remote_controls_enabled:
+                    await self.update_settings({"remote_controls_enabled": False})
                 self.runtime.cloud_state = "unconfigured"
                 self.runtime.cloud_error = None
                 self.runtime.cloud_session_id = None
@@ -1013,6 +1059,7 @@ class HubController:
                 max_probes=MAX_PROBES,
                 source=self.runtime.last_source or "ble",
                 probe_names=self.settings.probe_names,
+                remote_controls_enabled=self.settings.remote_controls_enabled,
             )
             try:
                 write_json_atomic(self.status_file, disconnected)
@@ -1114,6 +1161,7 @@ class HubController:
             max_probes=MAX_PROBES,
             source=source,
             probe_names=self.settings.probe_names,
+            remote_controls_enabled=self.settings.remote_controls_enabled,
         )
         self.runtime.last_good_state = state
         try:
@@ -1136,6 +1184,7 @@ class HubController:
                     self.summary,
                     max_probes=MAX_PROBES,
                     discovery_cache_file=self.data_dir / "discovery_cache.json",
+                    command_handler=self._mqtt_command_received,
                 )
             await self._mqtt_session.publish(state, self.settings.poll_seconds)
             self.runtime.mqtt_published_at = utc_now()
@@ -1145,6 +1194,87 @@ class HubController:
         except Exception as exc:
             self.runtime.mqtt_error = str(exc)
             LOGGER.error("MQTT publish failed: %r", exc)
+
+    def _mqtt_command_received(self, topic: str, payload: str) -> None:
+        if self._event_loop is None or self._closing:
+            return
+        future = asyncio.run_coroutine_threadsafe(
+            self.remote_command(topic, payload), self._event_loop
+        )
+
+        def command_finished(completed: Any) -> None:
+            try:
+                completed.result()
+            except Exception:
+                LOGGER.warning("Remote cook command failed", exc_info=True)
+
+        future.add_done_callback(command_finished)
+
+    async def remote_command(self, topic: str, payload: str) -> dict[str, Any]:
+        """Validate and route an explicitly enabled MQTT cook command."""
+
+        try:
+            await self._execute_remote_command(topic, payload)
+        except Exception as exc:
+            self.runtime.control_error = str(exc)
+            raise
+        self.runtime.control_last_command_at = utc_now()
+        self.runtime.control_error = None
+        self._wake.set()
+        return {"ok": True}
+
+    async def _execute_remote_command(self, topic: str, payload: str) -> None:
+        if not self.settings.remote_controls_enabled:
+            raise ValueError("Remote cook controls are disabled.")
+        if self.cloud_config is None or not self.cloud_config.enabled:
+            raise ValueError("Weber Cloud access is required for remote controls.")
+        appliance_id = self.cloud_config.appliance_id or self._appliance_id()
+        if appliance_id is None:
+            raise ValueError("The paired hub has no cloud appliance ID.")
+        marker = "/command/"
+        if marker not in topic:
+            raise ValueError("Invalid command topic.")
+        route = topic.split(marker, 1)[1].strip("/").split("/")
+        client = self._cloud_client or self._new_cloud_client()
+        if len(route) == 2 and route[0] == "cook" and route[1] in {"confirm", "stop"}:
+            action = route[1]
+            if payload.strip().lower() != action:
+                raise ValueError("Cook command payload does not match its topic.")
+            active_cook = (self.runtime.last_good_state.get("status") or {}).get(
+                "active_cook"
+            )
+            if not isinstance(active_cook, dict) or not active_cook.get("active"):
+                raise ValueError("No active cook is available for this command.")
+            await asyncio.to_thread(
+                client.session_command,
+                appliance_id,
+                active_cook,
+                action,
+            )
+        elif (
+            len(route) == 3
+            and route[0] == "timer"
+            and route[1].isdigit()
+            and route[2] in {"start", "reset"}
+        ):
+            timer_number = int(route[1])
+            if timer_number < 1 or timer_number > 4:
+                raise ValueError("Timer number must be between 1 and 4.")
+            action = route[2]
+            duration_s = 0
+            if action == "start":
+                duration_s = parse_whole_number(payload.strip(), "timer duration")
+            elif payload.strip().lower() != "reset":
+                raise ValueError("Timer reset payload is invalid.")
+            await asyncio.to_thread(
+                client.timer_command,
+                appliance_id,
+                timer_number - 1,
+                action,
+                duration_s,
+            )
+        else:
+            raise ValueError("Unsupported remote cook command.")
 
     async def _close_mqtt(self) -> None:
         session, self._mqtt_session = self._mqtt_session, None

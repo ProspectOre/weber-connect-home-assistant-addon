@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0 — 2026-07-17
+
+- Added live Weber companion WebSocket support alongside the existing REST
+  snapshots, while retaining BLE as the preferred local transport.
+- Added Home Assistant entities for the active recipe, current instruction,
+  full ordered instruction list, cook target, cook time remaining, cavity
+  temperatures, and four timers.
+- Added optional MQTT controls to confirm the current recipe step, stop the
+  active cook, and start or reset timers. Controls are disabled by default,
+  validated at every boundary, and removed automatically when cloud access is
+  disabled.
+- Added protocol-level tests for cloud routing envelopes, installed-program
+  decoding, active-step selection, session commands, timer commands, and MQTT
+  control migration.
+- The bridge still does not install or start recipes, change temperature
+  targets, ignite an appliance, configure Wi-Fi, or change grill modes.
+
 ## 2.0.2 — 2026-07-17
 
 - Made the Bluetooth prerequisite explicit at every pairing entry point: fully

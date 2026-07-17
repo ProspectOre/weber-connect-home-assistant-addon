@@ -56,9 +56,11 @@ installation. Setup does not depend on Android packet capture, certificate
 interception, phone app storage, or email/password login.
 
 While the Weber app is using Bluetooth, it can display the hub and start a
-recipe while Home Assistant receives the same probe telemetry through Weber
-Cloud. Home Assistant currently exposes probe readings and connection state,
-not the recipe title, instructions, or cooking controls.
+recipe while Home Assistant receives the same cook through Weber Cloud. Home
+Assistant exposes probe and cavity temperatures, the active recipe title,
+current and upcoming instructions, cook progress, and timers. Optional remote
+controls can confirm the current step, stop the active cook, and start or reset
+timers. They are disabled by default.
 
 New installs refresh local probe readings every 10 seconds. While the Weber app
 has Bluetooth access, cloud-ready bridges preselect **Manual reconnect** so Home
@@ -79,7 +81,7 @@ The 2.0 release has been physically verified with a Weber Connect Hub, Home
 Assistant Yellow, and the official Weber app on Android. The verified scenario
 includes Weber app access, simultaneous Home Assistant cloud telemetry,
 and probe updates from a recipe started in the Weber app. The release is also
-covered by 302 automated tests with a 95% branch-coverage gate.
+covered by more than 300 automated tests with a 95% branch-coverage gate.
 
 That is the project's current test matrix, not a claim that every Weber model,
 firmware version, Home Assistant host, Bluetooth adapter, or region has been
@@ -94,8 +96,11 @@ documented matrix will grow.
 BLE readings stay local between Home Assistant and the hub. The recommended
 phone-coexistence setup also uses Weber's private, undocumented API; **Local
 only** is available during onboarding. The cloud path sends companion
-authentication and cook-history requests but never configures Wi-Fi, starts a
-cook, changes a target, or controls a grill.
+authentication, live session, program-detail, and cook-history requests. When
+the user explicitly enables remote controls, it may also confirm or stop an
+active cook and start or reset timers. It never configures Wi-Fi, installs or
+starts a recipe, changes a temperature target, ignites an appliance, or changes
+a grill mode.
 
 Pairing keys, cloud device passwords and tokens, MQTT passwords, app captures,
 and runtime JSON are private runtime data and are excluded from the repository.

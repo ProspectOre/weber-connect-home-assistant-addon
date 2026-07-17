@@ -41,9 +41,17 @@ not an individual user. The per-install companion password and bearer tokens are
 the sensitive credentials.
 
 Weber's cloud API is private and undocumented. Enabling it sends companion
-authentication and read-only cook-history requests to Weber. The bridge never
-uses the cloud path to start recipes, change targets, configure Wi-Fi, or control
-a grill.
+authentication, live cook-session, installed-program, and cook-history requests
+to Weber. Remote cook commands are a separate setting, disabled by default, and
+require the configured MQTT broker to be trusted. When enabled, the accepted
+command set is limited to confirming or stopping an active cook and starting or
+resetting one of four timers. Topics, payloads, timer ranges, and active-session
+state are validated before a command is sent.
+
+The bridge never uses the cloud path to install or start a recipe, change a
+temperature target, configure Wi-Fi, ignite an appliance, or change a grill
+mode. Disabling or removing cloud access automatically disables and removes the
+remote-control entities.
 
 **Remove Credentials** deletes the local cloud identity but cannot remove a
 server-side companion record because Weber exposes no supported revocation API

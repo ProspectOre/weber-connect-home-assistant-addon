@@ -872,6 +872,12 @@
         </details>
       </div>
     </div>
+    <div class="settings-section field" id="controls-field">
+      <div class="section-kicker">Cook session</div>
+      <div class="field-label">Remote cook controls</div>
+      <p class="field-help">Adds Home Assistant controls for the active cook and timers. It cannot ignite the grill or start a new recipe. Leave this off if you only want monitoring.</p>
+      <div class="segmented" id="controls-options" role="group" aria-label="Remote cook controls"></div>
+    </div>
     <div class="settings-section danger-zone">
       <div class="section-kicker">Reset</div>
       <button class="button danger" id="forget-button" type="button">Forget This Hub</button>
@@ -1053,6 +1059,11 @@
   function renderConnection(st) {
     const hubName = esc(st.hub?.display_name || "Weber Connect Hub");
     const setupError = st.setup_error || actionError;
+    const activeCook = st.active_cook || {};
+    const activeTitle = activeCook.title ? esc(activeCook.title) : null;
+    const activeInstruction = activeCook.instruction ? esc(activeCook.instruction) : null;
+    const displayName = activeTitle || hubName;
+    const cookDetail = activeInstruction || (activeTitle ? hubName : null);
 
     if (st.state === "setup") {
       if (st.scanning) return renderSetupBusy("Looking for your hub…", "Wake the hub and keep it near Home Assistant.", setupError, "Discover");
@@ -1100,7 +1111,7 @@
       const cloudLive = st.source === "cloud" && st.readings_stale !== true;
       return `<div class="connection">
         <div class="state-orbit ${cloudLive ? "cloud" : "handoff"}" aria-hidden="true"></div>
-        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">Weber app access</span><span class="transport-chip ${cloudLive ? "cloud" : ""}">${icon(cloudLive ? "cloud" : "phone")}${cloudLive ? "Cloud live" : "Bluetooth available"}</span></div><h2 class="connection-title ${cloudLive ? "cloud" : "handoff"}">${cloudLive ? "Following through cloud" : "Ready for the Weber app"}</h2><p class="connection-name">${hubName}</p><p class="connection-meta">${sub}</p><p class="connection-detail">${cloudLive ? "The Weber app can use Bluetooth while Home Assistant receives the cook through Weber Cloud." : "Open the Weber app to connect. Select Reconnect now when you want Home Assistant to use Bluetooth again."}</p></div>
+        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">Weber app access</span><span class="transport-chip ${cloudLive ? "cloud" : ""}">${icon(cloudLive ? "cloud" : "phone")}${cloudLive ? "Cloud live" : "Bluetooth available"}</span></div><h2 class="connection-title ${cloudLive ? "cloud" : "handoff"}">${cloudLive ? "Following through cloud" : "Ready for the Weber app"}</h2><p class="connection-name">${displayName}</p><p class="connection-meta">${sub}</p><p class="connection-detail">${cookDetail || (cloudLive ? "The Weber app can use Bluetooth while Home Assistant receives the cook through Weber Cloud." : "Open the Weber app to connect. Select Reconnect now when you want Home Assistant to use Bluetooth again.")}</p></div>
         <div class="connection-actions">${actionButton("Reconnect now", "resume", "secondary")}</div>
       </div>`;
     }
@@ -1108,7 +1119,7 @@
       const cloudSource = st.source === "cloud";
       return `<div class="connection">
         <div class="state-orbit ${cloudSource ? "cloud" : "online"}" aria-hidden="true"></div>
-        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">Live cook</span><span class="transport-chip ${cloudSource ? "cloud" : ""}">${icon(cloudSource ? "cloud" : "bluetooth")}${cloudSource ? "Weber Cloud" : "Local Bluetooth"}</span></div><h2 class="connection-title ${cloudSource ? "cloud" : "online"}">${cloudSource ? "Cloud connected" : "Connected"}</h2><p class="connection-name">${hubName}</p><p class="connection-meta" data-last-read>${esc(timeAgo(st.last_read_at))}</p><p class="connection-detail">${cloudSource ? "Home Assistant is receiving current cook snapshots from Weber Cloud." : "Home Assistant has a direct, local connection to your hub."}</p></div>
+        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">Live cook</span><span class="transport-chip ${cloudSource ? "cloud" : ""}">${icon(cloudSource ? "cloud" : "bluetooth")}${cloudSource ? "Weber Cloud" : "Local Bluetooth"}</span></div><h2 class="connection-title ${cloudSource ? "cloud" : "online"}">${cloudSource ? "Cloud connected" : "Connected"}</h2><p class="connection-name">${displayName}</p><p class="connection-meta" data-last-read>${esc(timeAgo(st.last_read_at))}</p><p class="connection-detail">${cookDetail || (cloudSource ? "Home Assistant is receiving current cook snapshots from Weber Cloud." : "Home Assistant has a direct, local connection to your hub.")}</p></div>
         <div class="connection-actions">${actionButton("Use Weber app", "open-handoff", "secondary", "phone")}</div>
       </div>`;
     }
@@ -1205,7 +1216,7 @@
     const globalError = actionError && status.paired ? noticeMarkup(actionError) : "";
     main.innerHTML = `<section class="shell">${globalError}${renderConnection(status)}${renderContext(status)}${renderProbes(status)}${renderCloudInvite(status)}${renderHealth(status)}</section>`;
     main.setAttribute("aria-busy", activeAction ? "true" : "false");
-    pageFooter.innerHTML = `<span>Weber Connect for Home Assistant ${esc(status.version || "")}</span><span>Unofficial · Read-only · <a href="https://github.com/ProspectOre/weber-connect-home-assistant-addon/wiki" target="_blank" rel="noreferrer">Help</a></span>`;
+    pageFooter.innerHTML = `<span>Weber Connect for Home Assistant ${esc(status.version || "")}</span><span>Unofficial · ${status.settings?.remote_controls_enabled ? "Remote controls enabled" : "Monitoring"} · <a href="https://github.com/ProspectOre/weber-connect-home-assistant-addon/wiki" target="_blank" rel="noreferrer">Help</a></span>`;
     bindMainActions();
     renderSettings();
   }
@@ -1306,6 +1317,7 @@
     const settings = status.settings || {};
     renderSegment("poll-options", POLL_CHOICES, settings.poll_seconds, (value) => act("settings", { poll_seconds: value }));
     renderSegment("handoff-options", HANDOFF_CHOICES, settings.handoff_minutes, (value) => act("settings", { handoff_minutes: value }));
+    renderSegment("controls-options", [[0, "Off"], [1, "On"]], settings.remote_controls_enabled ? 1 : 0, (value) => act("settings", { remote_controls_enabled: value === 1 }));
     if (handoffBackdrop.hidden) handoffSelection = Number(settings.handoff_minutes) || 0;
     renderSegment("handoff-dialog-options", HANDOFF_CHOICES, handoffSelection, (value) => {
       handoffSelection = value;

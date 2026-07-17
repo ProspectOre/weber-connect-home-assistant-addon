@@ -86,6 +86,89 @@ class BridgeContractTests(unittest.TestCase):
         self.assertEqual(state["probe_2_state"], "No probe")
         self.assertEqual(state["probe_count"], 1)
 
+    def test_active_recipe_guidance_and_opt_in_controls_contract(self):
+        status = self.status()
+        status.update(
+            {
+                "active_cook": {
+                    "active": True,
+                    "title": "Smoked Brisket",
+                    "state": "COOKING",
+                    "program_id": "12345678-1234-5678-9abc-def012345678",
+                    "plan_id": 42,
+                    "probe_number": 1,
+                    "step_id": 7,
+                    "prompt_id": 9,
+                    "current_instruction": "Wrap the brisket.",
+                    "time_remaining_s": 600,
+                    "time_elapsed_s": 1200,
+                    "current_step": {
+                        "target_temperature_c": 93,
+                        "cook_mode": "SMOKE",
+                    },
+                    "current_prompt": {"short_title": "Wrap"},
+                    "prompts": [
+                        {
+                            "step_id": 7,
+                            "id": 9,
+                            "short_title": "Wrap",
+                            "instruction": "Wrap the brisket.",
+                        },
+                        {"step_id": 8, "id": 10},
+                        "bad",
+                    ],
+                },
+                "cavities": [
+                    {"cavity_number": 1, "temperature_f": 250, "temperature_c": 121.1},
+                    {"cavity_number": 2, "temperature_f": 225, "temperature_c": 107.2},
+                ],
+                "timers": [{"timer_number": 2, "remaining_s": 45}],
+            }
+        )
+        state = bridge.build_state(
+            self.summary(),
+            status,
+            address="AA:BB:CC:DD:EE:FF",
+            connected=True,
+            max_probes=2,
+            source="cloud",
+            remote_controls_enabled=True,
+        )
+
+        self.assertEqual(state["active_recipe"], "Smoked Brisket")
+        self.assertEqual(state["current_instruction_short"], "Wrap")
+        self.assertEqual(state["cook_target_temperature_f"], 199.4)
+        self.assertEqual(state["active_cook"]["instructions"][0]["prompt_id"], 9)
+        self.assertEqual(state["cavity_2_temperature_f"], 225)
+        self.assertEqual(state["timer_2_remaining_s"], 45)
+        self.assertTrue(state["cook_control_available"])
+
+        plan = bridge.build_mqtt_publish_plan(
+            self.args(availability=True), state, self.summary()
+        )
+        configs = {
+            row["topic"]: json.loads(row["payload"])
+            for row in plan
+            if row["topic"].endswith("/config")
+        }
+        command_topics = {
+            payload["command_topic"]
+            for payload in configs.values()
+            if "command_topic" in payload
+        }
+        root = "weber_connect/weber_connect_testserial/command"
+        self.assertIn(f"{root}/cook/confirm", command_topics)
+        self.assertIn(f"{root}/cook/stop", command_topics)
+        self.assertIn(f"{root}/timer/4/start", command_topics)
+        self.assertIn(f"{root}/timer/4/reset", command_topics)
+        self.assertEqual(len(command_topics), 10)
+        active_recipe = next(
+            payload
+            for topic, payload in configs.items()
+            if topic.endswith("_active_recipe/config")
+        )
+        self.assertIn("json_attributes_topic", active_recipe)
+
     def test_paused_state_marks_disconnected_and_preserves_probe_slots(self):
         state = bridge.build_state(
             self.summary(),
@@ -131,10 +214,9 @@ class BridgeContractTests(unittest.TestCase):
         )
         plan = bridge.build_mqtt_publish_plan(self.args(), state, self.summary())
 
-        # probe1 temp/state/battery, probe2 temp/state, connectivity,
-        # last_publish, and the state payload: no entity-deleting empty
-        # battery payload for the batteryless probe 2.
-        self.assertEqual(len(plan), 8)
+        # Probe entities, cook/session monitoring, connectivity, last publish,
+        # and the state payload. Controls are absent until explicitly enabled.
+        self.assertEqual(len(plan), 18)
         self.assertEqual(plan[-1]["topic"], "weber_connect/weber_connect_testserial/state")
         self.assertTrue(plan[-1]["retain"])
         self.assertEqual(json.loads(plan[-1]["payload"])["probe_1_temperature_f"], 205.5)

@@ -82,7 +82,7 @@ class PanelUiContractTests(unittest.TestCase):
         expected = (
             "Unofficial · Home Assistant",
             "Weber Connect for Home Assistant",
-            "Unofficial · Read-only",
+            "Unofficial · ${status.settings?.remote_controls_enabled ? \"Remote controls enabled\" : \"Monitoring\"}",
             "Set Up My Hub",
             "Connect once. Cook anywhere.",
             "Local only",

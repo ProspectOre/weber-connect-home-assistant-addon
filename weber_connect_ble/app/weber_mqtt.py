@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import threading
 import time
@@ -58,11 +59,13 @@ class MqttSession:
         max_probes: int,
         client_factory: Callable[..., Any] | None = None,
         discovery_cache_file: Path | None = None,
+        command_handler: Callable[[str, str], None] | None = None,
     ) -> None:
         self.config = config
         self.summary = summary
         self.max_probes = max_probes
         self._client_factory = client_factory
+        self._command_handler = command_handler
         self._client: Any = None
         self._connected = threading.Event()
         self._thread_lock = threading.Lock()
@@ -141,6 +144,8 @@ class MqttSession:
                 success = reason_code == 0
             if success:
                 self._connected.set()
+                if self._command_handler is not None:
+                    _client.subscribe(f"{self.topic_root}/command/#", qos=1)
             else:
                 LOGGER.error("MQTT broker rejected connection: %s", reason_code)
 
@@ -157,6 +162,20 @@ class MqttSession:
 
         client.on_connect = on_connect
         client.on_disconnect = on_disconnect
+        command_handler = self._command_handler
+        if command_handler is not None:
+            def on_message(
+                _client: Any,
+                _userdata: Any,
+                message: Any,
+            ) -> None:
+                try:
+                    payload = bytes(message.payload).decode("utf-8")
+                    command_handler(str(message.topic), payload)
+                except Exception:
+                    LOGGER.warning("Rejected MQTT command", exc_info=True)
+
+            client.on_message = on_message
         return client
 
     def _discard_client(self) -> None:
@@ -234,7 +253,37 @@ class MqttSession:
                     "online" if connected else "offline",
                     deadline,
                 )
-                for publish in build_mqtt_publish_plan(args, state, self.summary):
+                publish_plan = build_mqtt_publish_plan(args, state, self.summary)
+                active_discovery_topics = {
+                    publish["topic"]
+                    for publish in publish_plan
+                    if publish["topic"].endswith("/config")
+                }
+                # If controls were previously enabled, disabling them removes
+                # their retained discovery records exactly once. Other absent
+                # entities (for example a temporarily missing probe battery)
+                # remain intact across reconnects.
+                obsolete_controls = []
+                for topic, cached_payload in self._discovery_cache.items():
+                    if topic in active_discovery_topics:
+                        continue
+                    try:
+                        config = json.loads(cached_payload)
+                    except (TypeError, ValueError):
+                        continue
+                    command_topic = config.get("command_topic") if isinstance(config, dict) else None
+                    if isinstance(command_topic, str) and command_topic.startswith(
+                        f"{self.topic_root}/command/"
+                    ):
+                        obsolete_controls.append(topic)
+                for topic in obsolete_controls:
+                    result = client.publish(topic, "", qos=0, retain=True)
+                    self._wait_for_publish(result, max(0.1, deadline - time.monotonic()))
+                    self._discovery_cache.pop(topic, None)
+                if obsolete_controls:
+                    self._persist_discovery_cache()
+
+                for publish in publish_plan:
                     is_discovery = publish["topic"].endswith("/config")
                     if is_discovery and self._discovery_cache.get(publish["topic"]) == publish["payload"]:
                         continue

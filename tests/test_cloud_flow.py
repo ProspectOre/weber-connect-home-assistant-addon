@@ -48,6 +48,10 @@ class ScriptedClient(cloud.WeberCloudClient):
             raise AssertionError("unexpected request")
         return self.responses.pop(0)
 
+    def live_status(self, appliance_id: str) -> dict[str, Any]:
+        # REST paging tests deliberately don't open a real cloud WebSocket.
+        raise cloud.WeberCloudError("live socket disabled in scripted test")
+
 
 class CloudConfigTests(unittest.TestCase):
     def test_roundtrip_public_view_and_enable_toggle(self) -> None:
@@ -121,6 +125,37 @@ class TemperatureTests(unittest.TestCase):
         self.assertEqual(result["probes"][0]["probe_number"], 1)
         self.assertEqual(result["probes"][0]["probe_temp_c"], 100.0)
         self.assertEqual(result["snapshot_id"], 7)
+
+    def test_snapshot_normalizes_cavities_timers_and_notification(self) -> None:
+        snapshot = {
+            "snapshot_id": 8,
+            "data": {
+                "cavity_status": [
+                    {"index": 0, "temperature": 350},
+                    {"index": True, "temperature": 225},
+                    {"index": 1, "temperature": 0},
+                    "bad",
+                ],
+                "timer_status": [
+                    {"index": 0, "id": "timer-a", "duration": 30_400},
+                    {"index": 1, "duration": -1_000},
+                    {"index": True, "duration": 1_000},
+                    {"index": 2, "duration": False},
+                    "bad",
+                ],
+                "notification": {"type": "ready"},
+            },
+        }
+
+        result = cloud.cloud_status_from_snapshot(snapshot, "fahrenheit")
+
+        self.assertEqual(
+            result["cavities"],
+            [{"cavity_number": 1, "temperature_f": 350.0, "temperature_c": 176.7}],
+        )
+        self.assertEqual(result["timers"][0]["remaining_s"], 30)
+        self.assertEqual(result["timers"][1]["remaining_s"], 0)
+        self.assertEqual(result["notification"], {"type": "ready"})
 
     def test_snapshot_handles_missing_data(self) -> None:
         self.assertEqual(cloud.cloud_status_from_snapshot({}, "fahrenheit")["probes"], [])
@@ -215,6 +250,81 @@ class HttpClientTests(unittest.TestCase):
             cloud.urllib.request, "urlopen", side_effect=OSError("offline")
         ), self.assertRaises(cloud.WeberCloudError):
             client._open(cloud.urllib.request.Request("https://example.invalid"))
+
+
+class LiveSocketClientTests(unittest.TestCase):
+    class FakeSocket:
+        def __init__(self) -> None:
+            self.closed = False
+            self.session_calls: list[tuple[str, dict[str, Any], str]] = []
+            self.timer_calls: list[tuple[str, int, str, int]] = []
+
+        def live_status(self, appliance_id: str) -> dict[str, Any]:
+            return {
+                "appliance_id": appliance_id,
+                "active_cook": {"active": True, "title": "Brisket"},
+                "timers": [{"timer_number": 4, "remaining_s": 999}],
+            }
+
+        def session_command(
+            self, appliance_id: str, active_cook: dict[str, Any], command: str
+        ) -> None:
+            self.session_calls.append((appliance_id, active_cook, command))
+
+        def timer_command(
+            self, appliance_id: str, timer_index: int, action: str, duration_s: int
+        ) -> None:
+            self.timer_calls.append((appliance_id, timer_index, action, duration_s))
+
+        def close(self) -> None:
+            self.closed = True
+
+    def test_live_facade_merges_rest_only_fields_and_routes_commands(self) -> None:
+        client = cloud.WeberCloudClient(config())
+        socket = self.FakeSocket()
+        client._socket_client = socket
+        history = {
+            "cavities": [{"cavity_number": 1, "temperature_f": 350}],
+            "timers": [{"timer_number": 1, "remaining_s": 30}],
+            "notification": {"type": "ready"},
+            "snapshot_id": 9,
+            "server_timestamp": 10,
+        }
+
+        merged = client._merge_live_status(APPLIANCE_ID, history)
+        active_cook = merged["active_cook"]
+        client.session_command(APPLIANCE_ID, active_cook, "confirm")
+        client.timer_command(APPLIANCE_ID, 1, "start", 30)
+
+        self.assertEqual(merged["kind"], "cloud_live_session")
+        self.assertEqual(merged["timers"], history["timers"])
+        self.assertEqual(merged["cavities"], history["cavities"])
+        self.assertEqual(socket.session_calls, [(APPLIANCE_ID, active_cook, "confirm")])
+        self.assertEqual(socket.timer_calls, [(APPLIANCE_ID, 1, "start", 30)])
+        self.assertEqual(client.config_host, cloud.API_HOST)
+        self.assertEqual(client.user_agent, cloud.USER_AGENT)
+
+        client.close()
+        client.close()
+        self.assertTrue(socket.closed)
+        self.assertIsNone(client._socket_client)
+
+    def test_live_failure_falls_back_and_lazy_socket_is_cached(self) -> None:
+        client = cloud.WeberCloudClient(config())
+        history = {"kind": "cloud_cook_history", "probes": []}
+        with mock.patch.object(
+            client, "live_status", side_effect=RuntimeError("socket offline")
+        ):
+            self.assertIs(client._merge_live_status(APPLIANCE_ID, history), history)
+        self.assertEqual(client.socket_error, "socket offline")
+
+        created = object()
+        with mock.patch(
+            "weber_cloud_socket.WeberCloudSocketClient", return_value=created
+        ) as factory:
+            self.assertIs(client._socket(), created)
+            self.assertIs(client._socket(), created)
+        factory.assert_called_once_with(client)
 
 
 class ApiFlowTests(unittest.TestCase):
@@ -337,6 +447,8 @@ class FakeCloudClient:
         )
         self.error: Exception | None = None
         self.access_error: Exception | None = None
+        self.session_commands: list[tuple[str, dict, str]] = []
+        self.timer_commands: list[tuple[str, int, str, int]] = []
 
     def authenticate(self) -> str:
         self.authentications += 1
@@ -370,6 +482,14 @@ class FakeCloudClient:
             raise self.error
         self.polls.append(appliance_id)
         return self.poll_result
+
+    def session_command(self, appliance_id: str, active_cook: dict, command: str) -> None:
+        self.session_commands.append((appliance_id, active_cook, command))
+
+    def timer_command(
+        self, appliance_id: str, timer_index: int, action: str, duration_s: int
+    ) -> None:
+        self.timer_commands.append((appliance_id, timer_index, action, duration_s))
 
 
 class CloudPanelTests(unittest.IsolatedAsyncioTestCase):
@@ -592,6 +712,112 @@ class CloudPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(removed["ok"])
         self.assertFalse(controller.cloud_file.exists())
         self.assertEqual(controller.runtime.cloud_state, "unconfigured")
+
+    async def test_opt_in_remote_commands_are_validated_and_routed(self) -> None:
+        controller = self.make_controller()
+        self.assertTrue((await controller.update_cloud({"action": "create"}))["ok"])
+        self.assertTrue(
+            (await controller.update_settings({"remote_controls_enabled": True}))["ok"]
+        )
+        active_cook = {
+            "active": True,
+            "program_id": "12345678-1234-5678-9abc-def012345678",
+            "plan_id": 42,
+            "session_type_value": 1,
+            "session_index": 0,
+            "step_id": 7,
+        }
+        controller.runtime.last_good_state = {"status": {"active_cook": active_cook}}
+
+        self.assertTrue(
+            (
+                await controller.remote_command(
+                    "weber_connect/test/command/cook/confirm", "confirm"
+                )
+            )["ok"]
+        )
+        self.assertTrue(
+            (
+                await controller.remote_command(
+                    "weber_connect/test/command/timer/2/start", "30"
+                )
+            )["ok"]
+        )
+        self.assertTrue(
+            (
+                await controller.remote_command(
+                    "weber_connect/test/command/timer/2/reset", "reset"
+                )
+            )["ok"]
+        )
+
+        client = self.clients[-1]
+        self.assertEqual(client.session_commands, [(APPLIANCE_ID, active_cook, "confirm")])
+        self.assertEqual(
+            client.timer_commands,
+            [(APPLIANCE_ID, 1, "start", 30), (APPLIANCE_ID, 1, "reset", 0)],
+        )
+        self.assertIsNotNone(controller.runtime.control_last_command_at)
+
+        with self.assertRaises(ValueError):
+            await controller.remote_command(
+                "weber_connect/test/command/cook/stop", "confirm"
+            )
+        self.assertIn("does not match", controller.runtime.control_error or "")
+
+        self.assertTrue((await controller.update_cloud({"action": "disable"}))["ok"])
+        self.assertFalse(controller.settings.remote_controls_enabled)
+        with self.assertRaises(ValueError):
+            await controller.remote_command(
+                "weber_connect/test/command/timer/1/reset", "reset"
+            )
+        await controller.stop()
+
+    async def test_remote_command_rejects_every_unsafe_shape_and_records_failure(self) -> None:
+        controller = self.make_controller()
+        with self.assertRaisesRegex(ValueError, "disabled"):
+            await controller.remote_command("root/command/timer/1/start", "30")
+
+        self.assertTrue((await controller.update_cloud({"action": "create"}))["ok"])
+        self.assertTrue(
+            (await controller.update_settings({"remote_controls_enabled": True}))["ok"]
+        )
+        saved_config = controller.cloud_config
+        assert saved_config is not None
+
+        controller.cloud_config = None
+        with self.assertRaisesRegex(ValueError, "Cloud access"):
+            await controller.remote_command("root/command/timer/1/start", "30")
+        controller.cloud_config = saved_config
+
+        controller.cloud_config = config(appliance_id=None)
+        assert controller.summary is not None
+        controller.summary["hub"].pop("appliance_id", None)
+        with self.assertRaisesRegex(ValueError, "no cloud appliance ID"):
+            await controller.remote_command("root/command/timer/1/start", "30")
+        controller.cloud_config = saved_config
+
+        cases = [
+            ("root/no-command", "30", "Invalid command topic"),
+            ("root/command/cook/confirm", "confirm", "No active cook"),
+            ("root/command/timer/5/start", "30", "between 1 and 4"),
+            ("root/command/timer/1/start", "30.5", "whole number"),
+            ("root/command/timer/1/reset", "start", "reset payload"),
+            ("root/command/grill/ignite", "ignite", "Unsupported"),
+        ]
+        for topic, payload, message in cases:
+            with self.subTest(topic=topic), self.assertRaisesRegex(ValueError, message):
+                await controller.remote_command(topic, payload)
+            self.assertIsNotNone(controller.runtime.control_error)
+
+        active_cook = {"active": True, "plan_id": 42}
+        controller.runtime.last_good_state = {"status": {"active_cook": active_cook}}
+        client = self.clients[-1]
+        with mock.patch.object(
+            client, "session_command", side_effect=RuntimeError("cloud rejected command")
+        ), self.assertRaisesRegex(RuntimeError, "cloud rejected"):
+            await controller.remote_command("root/command/cook/stop", "stop")
+        self.assertEqual(controller.runtime.control_error, "cloud rejected command")
         await controller.stop()
 
     async def test_create_automatically_uses_pairing_verification_code(self) -> None:
