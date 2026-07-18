@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 API_HOST = "api.walker-cloud.com"
+MESSAGING_HOST = "messaging.walker-cloud.com"
 USER_AGENT = "okhttp/5.3.0"
 STALE_GRACE_SECONDS = 60.0
 
@@ -200,10 +201,55 @@ def cloud_status_from_snapshot(snapshot: dict[str, Any], unit: str) -> dict[str,
                 "probe_temp_c": celsius,
             }
         )
+    cavities: list[dict[str, Any]] = []
+    cavity_rows = data.get("cavity_status", []) if isinstance(data, dict) else []
+    for row in cavity_rows if isinstance(cavity_rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("index")
+        if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+            continue
+        converted = normalize_cloud_temperature(row.get("temperature"), unit)
+        if converted is None:
+            continue
+        fahrenheit, celsius = converted
+        cavities.append(
+            {
+                "cavity_number": index + 1,
+                "temperature_f": fahrenheit,
+                "temperature_c": celsius,
+            }
+        )
+    timers: list[dict[str, Any]] = []
+    timer_rows = data.get("timer_status", []) if isinstance(data, dict) else []
+    for row in timer_rows if isinstance(timer_rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("index")
+        duration_ms = row.get("duration")
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index < 0
+            or isinstance(duration_ms, bool)
+            or not isinstance(duration_ms, (int, float))
+        ):
+            continue
+        timers.append(
+            {
+                "timer_number": index + 1,
+                "timer_index": index,
+                "id": row.get("id"),
+                "remaining_s": max(0, round(float(duration_ms) / 1000)),
+            }
+        )
     return {
         "kind": "cloud_cook_history",
         "probe_count": len(probes),
         "probes": probes,
+        "cavities": cavities,
+        "timers": timers,
+        "notification": data.get("notification") if isinstance(data, dict) else None,
         "snapshot_id": snapshot.get("snapshot_id"),
         "server_timestamp": snapshot.get("server_timestamp"),
     }
@@ -243,6 +289,90 @@ class WeberCloudClient:
         self._after_id = 0
         self._last_status: dict[str, Any] | None = None
         self._last_snapshot_at = 0.0
+        self._socket_client: Any = None
+        self.socket_error: str | None = None
+
+    @property
+    def config_host(self) -> str:
+        return API_HOST
+
+    @property
+    def messaging_host(self) -> str:
+        return MESSAGING_HOST
+
+    @property
+    def user_agent(self) -> str:
+        return USER_AGENT
+
+    def close(self) -> None:
+        socket_client, self._socket_client = self._socket_client, None
+        if socket_client is not None:
+            socket_client.close()
+
+    def live_status(self, appliance_id: str) -> dict[str, Any]:
+        try:
+            self.wake_messaging(appliance_id)
+        except Exception:
+            # The official client treats this preflight as best effort; the
+            # WebSocket may still be available when the status route is not.
+            pass
+        status: dict[str, Any] = self._socket().live_status(appliance_id)
+        return status
+
+    def wake_messaging(self, appliance_id: str) -> None:
+        """Prompt the hub relay before opening the companion WebSocket."""
+
+        normalized = appliance_id.replace(":", "").strip().lower()
+        if not HEX_ID_RE.fullmatch(normalized):
+            raise ValueError("Cloud appliance ID must be 32 hexadecimal characters.")
+        request = urllib.request.Request(
+            f"https://{MESSAGING_HOST}/1/messaging/device/{normalized}/status",
+            method="GET",
+        )
+        request.add_header("User-Agent", USER_AGENT)
+        request.add_header("Accept-Encoding", "gzip")
+        request.add_header("Authorization", f"Bearer {self.token()}")
+        self._open(request)
+
+    def _socket(self) -> Any:
+        if self._socket_client is None:
+            from weber_cloud_socket import WeberCloudSocketClient
+
+            self._socket_client = WeberCloudSocketClient(self)
+        return self._socket_client
+
+    def session_command(
+        self, appliance_id: str, active_cook: dict[str, Any], command: str
+    ) -> None:
+        self._socket().session_command(appliance_id, active_cook, command)
+
+    def timer_command(
+        self, appliance_id: str, timer_index: int, action: str, duration_s: int = 0
+    ) -> None:
+        self._socket().timer_command(appliance_id, timer_index, action, duration_s)
+
+    def _merge_live_status(
+        self, appliance_id: str, history_status: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Prefer live socket fields while retaining REST-only timers/history."""
+
+        try:
+            live = self.live_status(appliance_id)
+        except Exception as exc:
+            self.socket_error = str(exc)
+            return history_status
+        self.socket_error = None
+        for key in (
+            "cavities",
+            "timers",
+            "notification",
+            "snapshot_id",
+            "server_timestamp",
+        ):
+            if key in history_status:
+                live[key] = history_status[key]
+        live["kind"] = "cloud_live_session"
+        return live
 
     def _open(self, request: urllib.request.Request) -> bytes:
         try:
@@ -442,6 +572,33 @@ class WeberCloudClient:
             if isinstance(snapshot_id, int) and not isinstance(snapshot_id, bool):
                 self._after_id = max(self._after_id, snapshot_id)
         if not snapshots:
+            # Cook-history snapshots are not emitted for every live change.
+            # Ask the appliance directly so a recipe started in the Weber app
+            # appears on the next poll even when REST history has not advanced.
+            try:
+                live = self.live_status(appliance_id)
+            except Exception as exc:
+                self.socket_error = str(exc)
+            else:
+                self.socket_error = None
+                previous = self._last_status or {}
+                for key in (
+                    "cavities",
+                    "timers",
+                    "notification",
+                    "snapshot_id",
+                    "server_timestamp",
+                ):
+                    if key in previous:
+                        live[key] = previous[key]
+                live["kind"] = "cloud_live_session"
+                self._last_status = live
+                return CloudPollResult(
+                    status=live,
+                    session_id=session_id,
+                    after_id=self._after_id,
+                    snapshot_count=0,
+                )
             if (
                 self._last_status is not None
                 and time.monotonic() - self._last_snapshot_at <= STALE_GRACE_SECONDS
@@ -454,6 +611,7 @@ class WeberCloudClient:
                 )
             return None
         status = cloud_status_from_snapshot(snapshots[-1], self.config.temperature_unit)
+        status = self._merge_live_status(appliance_id, status)
         self._last_status = status
         self._last_snapshot_at = time.monotonic()
         return CloudPollResult(

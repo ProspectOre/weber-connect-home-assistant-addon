@@ -38,7 +38,7 @@ DEFAULT_PAIRING_SUMMARY = Path("weber_probe/weber_android_pairing_summary.json")
 DEFAULT_JSON_OUT = Path("weber_probe/weber_status_latest.json")
 DEFAULT_TOPIC_ROOT = "weber_connect"
 STATE_TOPIC_SUFFIX = "state"
-VERSION = "2.0.2"
+VERSION = "2.1.0"
 HEX_16_BYTES_RE = re.compile(r"^[0-9a-fA-F]{32}$")
 LOGGER = logging.getLogger("weber_connect_bridge")
 
@@ -186,6 +186,7 @@ def build_state(
     max_probes: int,
     source: str = "ble",
     probe_names: dict[int, str] | None = None,
+    remote_controls_enabled: bool = False,
 ) -> dict[str, Any]:
     hub = summary.get("hub", {})
     aliases = probe_names or {}
@@ -212,7 +213,130 @@ def build_state(
         "status": latest_status,
         "probes": probes,
         "probe_count": latest_status.get("probe_count", 0),
+        "cook_controls_enabled": remote_controls_enabled,
     }
+
+    active_cook = latest_status.get("active_cook")
+    if not isinstance(active_cook, dict):
+        active_cook = {}
+    current_step = active_cook.get("current_step")
+    if not isinstance(current_step, dict):
+        current_step = {}
+    current_prompt = active_cook.get("current_prompt")
+    if not isinstance(current_prompt, dict):
+        current_prompt = {}
+    program_prompts = active_cook.get("prompts")
+    if not isinstance(program_prompts, list):
+        program_prompts = []
+    instructions = [
+        {
+            "step_id": prompt.get("step_id"),
+            "prompt_id": prompt.get("id"),
+            "title": prompt.get("short_title"),
+            "instruction": prompt.get("instruction"),
+        }
+        for prompt in program_prompts
+        if isinstance(prompt, dict)
+        and (prompt.get("short_title") or prompt.get("instruction"))
+    ]
+    target_c = current_step.get("target_temperature_c")
+    target_f = (
+        round(float(target_c) * 9.0 / 5.0 + 32.0, 1)
+        if isinstance(target_c, (int, float)) and not isinstance(target_c, bool)
+        else None
+    )
+    state.update(
+        {
+            "active_recipe": active_cook.get("title"),
+            "active_recipe_state": active_cook.get("state"),
+            "active_step": active_cook.get("step_id"),
+            "active_prompt": active_cook.get("prompt_id"),
+            "current_instruction": active_cook.get("current_instruction"),
+            "current_instruction_short": current_prompt.get("short_title"),
+            "cook_time_remaining_s": active_cook.get("time_remaining_s"),
+            "cook_time_elapsed_s": active_cook.get("time_elapsed_s"),
+            "cook_target_temperature_c": target_c,
+            "cook_target_temperature_f": target_f,
+            "cook_mode": current_step.get("cook_mode") or latest_status.get("cook_mode"),
+            "cook_control_available": bool(
+                connected and remote_controls_enabled and active_cook.get("active")
+            ),
+            "active_cook": (
+                {
+                    "title": active_cook.get("title"),
+                    "program_id": active_cook.get("program_id"),
+                    "plan_id": active_cook.get("plan_id"),
+                    "probe_number": active_cook.get("probe_number"),
+                    "state": active_cook.get("state"),
+                    "step_id": active_cook.get("step_id"),
+                    "prompt_id": active_cook.get("prompt_id"),
+                    "instruction": active_cook.get("current_instruction"),
+                    "short_instruction": current_prompt.get("short_title"),
+                    "target_temperature_c": target_c,
+                    "target_temperature_f": target_f,
+                    "time_remaining_s": active_cook.get("time_remaining_s"),
+                    "time_elapsed_s": active_cook.get("time_elapsed_s"),
+                    "cook_mode": current_step.get("cook_mode"),
+                    "instructions": instructions,
+                }
+                if active_cook
+                else {}
+            ),
+        }
+    )
+
+    cavities = latest_status.get("cavities")
+    if not isinstance(cavities, list):
+        cavities = []
+    for number in range(1, 3):
+        row = next(
+            (
+                item
+                for item in cavities
+                if isinstance(item, dict) and item.get("cavity_number") == number
+            ),
+            {},
+        )
+        state[f"cavity_{number}_temperature_f"] = row.get("temperature_f")
+        state[f"cavity_{number}_temperature_c"] = row.get("temperature_c")
+    if latest_status.get("actual_cavity_temp_f") is not None:
+        state["cavity_1_temperature_f"] = latest_status.get("actual_cavity_temp_f")
+        state["cavity_1_temperature_c"] = latest_status.get("actual_cavity_temp_c")
+
+    timers = latest_status.get("timers")
+    if not isinstance(timers, list):
+        timers = []
+    for number in range(1, 5):
+        row = next(
+            (
+                item
+                for item in timers
+                if isinstance(item, dict) and item.get("timer_number") == number
+            ),
+            {},
+        )
+        state[f"timer_{number}_remaining_s"] = row.get("remaining_s")
+
+    rendered_cook = state.get("active_cook")
+    if isinstance(rendered_cook, dict) and rendered_cook:
+        rendered_cook["cavities"] = [
+            {
+                "number": number,
+                "temperature_f": state.get(f"cavity_{number}_temperature_f"),
+                "temperature_c": state.get(f"cavity_{number}_temperature_c"),
+            }
+            for number in range(1, 3)
+            if state.get(f"cavity_{number}_temperature_f") is not None
+            or state.get(f"cavity_{number}_temperature_c") is not None
+        ]
+        rendered_cook["timers"] = [
+            {
+                "number": number,
+                "remaining_s": state.get(f"timer_{number}_remaining_s"),
+            }
+            for number in range(1, 5)
+            if state.get(f"timer_{number}_remaining_s") is not None
+        ]
 
     for number in range(1, max_probes + 1):
         prefix = f"probe_{number}"
@@ -287,8 +411,9 @@ def build_mqtt_publish_plan(
             "name": device_name,
             "manufacturer": "Weber",
             "model": hub.get("model") or "Connect Hub",
-            "sw_version": hub.get("software_revision"),
         }
+        if hub.get("software_revision"):
+            device["sw_version"] = hub["software_revision"]
         origin = {
             "name": "Weber Connect for Home Assistant (Unofficial)",
             "sw": VERSION,
@@ -373,6 +498,192 @@ def build_mqtt_publish_plan(
                         "retain": True,
                     }
                 )
+
+        hub_availability = (
+            {"availability_topic": f"{topic_prefix}/availability"}
+            if with_availability
+            else {}
+        )
+        cook_configs: list[tuple[str, str, dict[str, Any]]] = [
+            (
+                "sensor",
+                f"{device_id}_active_recipe",
+                {
+                    "name": "Active Recipe",
+                    "unique_id": f"{serial}_active_recipe",
+                    "state_topic": state_topic,
+                    **hub_availability,
+                    "value_template": "{{ value_json.active_recipe | default('No active cook', true) }}",
+                    "json_attributes_topic": state_topic,
+                    "json_attributes_template": "{{ value_json.active_cook | tojson }}",
+                    "icon": "mdi:chef-hat",
+                    "device": device,
+                    "origin": origin,
+                    "expire_after": expire_after,
+                },
+            ),
+            (
+                "sensor",
+                f"{device_id}_current_instruction",
+                {
+                    "name": "Current Instruction",
+                    "unique_id": f"{serial}_current_instruction",
+                    "state_topic": state_topic,
+                    **hub_availability,
+                    "value_template": "{{ value_json.current_instruction | default('No active instruction', true) }}",
+                    "icon": "mdi:format-list-checks",
+                    "device": device,
+                    "origin": origin,
+                    "expire_after": expire_after,
+                },
+            ),
+            (
+                "sensor",
+                f"{device_id}_cook_target_temperature",
+                {
+                    "name": "Cook Target Temperature",
+                    "unique_id": f"{serial}_cook_target_temperature",
+                    "state_topic": state_topic,
+                    **hub_availability,
+                    "value_template": "{{ value_json.cook_target_temperature_f }}",
+                    "unit_of_measurement": "°F",
+                    "device_class": "temperature",
+                    "state_class": "measurement",
+                    "device": device,
+                    "origin": origin,
+                    "expire_after": expire_after,
+                },
+            ),
+            (
+                "sensor",
+                f"{device_id}_cook_time_remaining",
+                {
+                    "name": "Cook Time Remaining",
+                    "unique_id": f"{serial}_cook_time_remaining",
+                    "state_topic": state_topic,
+                    **hub_availability,
+                    "value_template": "{{ value_json.cook_time_remaining_s }}",
+                    "unit_of_measurement": "s",
+                    "device_class": "duration",
+                    "device": device,
+                    "origin": origin,
+                    "expire_after": expire_after,
+                },
+            ),
+        ]
+        for number in range(1, 3):
+            cook_configs.append(
+                (
+                    "sensor",
+                    f"{device_id}_cavity_{number}_temperature",
+                    {
+                        "name": f"Cavity {number} Temperature",
+                        "unique_id": f"{serial}_cavity_{number}_temperature",
+                        "state_topic": state_topic,
+                        **hub_availability,
+                        "value_template": f"{{{{ value_json.cavity_{number}_temperature_f }}}}",
+                        "unit_of_measurement": "°F",
+                        "device_class": "temperature",
+                        "state_class": "measurement",
+                        "device": device,
+                        "origin": origin,
+                        "expire_after": expire_after,
+                    },
+                )
+            )
+        for number in range(1, 5):
+            cook_configs.append(
+                (
+                    "sensor",
+                    f"{device_id}_timer_{number}",
+                    {
+                        "name": f"Timer {number}",
+                        "unique_id": f"{serial}_timer_{number}",
+                        "state_topic": state_topic,
+                        **hub_availability,
+                        "value_template": f"{{{{ value_json.timer_{number}_remaining_s }}}}",
+                        "unit_of_measurement": "s",
+                        "device_class": "duration",
+                        "icon": "mdi:timer-outline",
+                        "device": device,
+                        "origin": origin,
+                        "expire_after": expire_after,
+                    },
+                )
+            )
+        if state.get("cook_controls_enabled"):
+            control_availability = {
+                "availability_topic": state_topic,
+                "availability_template": (
+                    "{{ 'online' if value_json.cook_control_available else 'offline' }}"
+                ),
+            }
+            for action, label, icon_name in (
+                ("confirm", "Confirm Current Step", "mdi:check-bold"),
+                ("stop", "Stop Active Cook", "mdi:stop-circle-outline"),
+            ):
+                cook_configs.append(
+                    (
+                        "button",
+                        f"{device_id}_{action}_cook",
+                        {
+                            "name": label,
+                            "unique_id": f"{serial}_{action}_cook",
+                            "command_topic": f"{topic_prefix}/command/cook/{action}",
+                            "payload_press": action,
+                            **control_availability,
+                            "icon": icon_name,
+                            "device": device,
+                            "origin": origin,
+                        },
+                    )
+                )
+            for number in range(1, 5):
+                cook_configs.extend(
+                    [
+                        (
+                            "number",
+                            f"{device_id}_timer_{number}_start",
+                            {
+                                "name": f"Start Timer {number}",
+                                "unique_id": f"{serial}_timer_{number}_start",
+                                "command_topic": f"{topic_prefix}/command/timer/{number}/start",
+                                "min": 1,
+                                "max": 86400,
+                                "step": 1,
+                                "unit_of_measurement": "s",
+                                "mode": "box",
+                                **hub_availability,
+                                "icon": "mdi:timer-plus-outline",
+                                "device": device,
+                                "origin": origin,
+                            },
+                        ),
+                        (
+                            "button",
+                            f"{device_id}_timer_{number}_reset",
+                            {
+                                "name": f"Reset Timer {number}",
+                                "unique_id": f"{serial}_timer_{number}_reset",
+                                "command_topic": f"{topic_prefix}/command/timer/{number}/reset",
+                                "payload_press": "reset",
+                                **hub_availability,
+                                "icon": "mdi:timer-remove-outline",
+                                "device": device,
+                                "origin": origin,
+                            },
+                        ),
+                    ]
+                )
+        for domain, object_id, config in cook_configs:
+            publish_plan.append(
+                {
+                    "topic": f"{args.discovery_prefix}/{domain}/{object_id}/config",
+                    "payload": json.dumps(config),
+                    "qos": 0,
+                    "retain": True,
+                }
+            )
 
         # Bridge-health entities: connectivity and the last successful publish.
         # These describe the hub link itself, so they stay available (no

@@ -56,9 +56,12 @@ installation. Setup does not depend on Android packet capture, certificate
 interception, phone app storage, or email/password login.
 
 While the Weber app is using Bluetooth, it can display the hub and start a
-recipe while Home Assistant receives the same probe telemetry through Weber
-Cloud. Home Assistant currently exposes probe readings and connection state,
-not the recipe title, instructions, or cooking controls.
+recipe while Home Assistant continues receiving the hub's cloud probe
+telemetry. Home Assistant also creates entities for cavity temperatures, active
+recipe details, instructions, cook progress, and timers. Those richer fields
+populate only when Weber makes the corresponding live-session data available
+to the bridge companion. Optional remote controls are disabled by default and
+remain experimental until verified on additional hardware.
 
 New installs refresh local probe readings every 10 seconds. While the Weber app
 has Bluetooth access, cloud-ready bridges preselect **Manual reconnect** so Home
@@ -73,13 +76,28 @@ the saved timed fallback is used.
 - Internet access for the recommended Weber app access path; **Local only**
   remains available without it.
 
+Bluetooth is direct from the add-on container to the Home Assistant host's
+BlueZ service. Home Assistant Bluetooth proxies are not used by this add-on, so
+initial pairing and local BLE reads require the hub to be near the Home
+Assistant machine or its attached Bluetooth adapter.
+
 ## Compatibility And Validation
 
-The 2.0 release has been physically verified with a Weber Connect Hub, Home
-Assistant Yellow, and the official Weber app on Android. The verified scenario
-includes Weber app access, simultaneous Home Assistant cloud telemetry,
-and probe updates from a recipe started in the Weber app. The release is also
-covered by 302 automated tests with a 95% branch-coverage gate.
+The current build was physically tested with a Weber Connect Hub running
+`2.0.3_7398`, Home Assistant Yellow running Home Assistant `2026.7.2`, and the
+official Weber app `2.10.0.2439` on a Samsung Galaxy Tab A9+ (`SM-X210`, Android
+16). The official app remained connected over Bluetooth while Home Assistant
+received matching Probe 2 temperatures through Weber Cloud. A T-Bone Steak
+recipe started in the app continued producing current Home Assistant probe
+telemetry. The add-on's complete MQTT discovery set was also accepted by Home
+Assistant and updated at the configured 10-second cadence.
+
+On that same setup, Weber did not return live recipe/program details to the
+independently paired bridge companion, so recipe title, instructions, remote
+cook commands, and timer commands are implemented but **not physically
+verified**. The official app logged that it could not fetch the cook-program
+details as well. The build is covered by 331 automated tests with a 95% coverage
+gate.
 
 That is the project's current test matrix, not a claim that every Weber model,
 firmware version, Home Assistant host, Bluetooth adapter, or region has been
@@ -94,8 +112,11 @@ documented matrix will grow.
 BLE readings stay local between Home Assistant and the hub. The recommended
 phone-coexistence setup also uses Weber's private, undocumented API; **Local
 only** is available during onboarding. The cloud path sends companion
-authentication and cook-history requests but never configures Wi-Fi, starts a
-cook, changes a target, or controls a grill.
+authentication, live session, program-detail, and cook-history requests. When
+the user explicitly enables remote controls, it may also confirm or stop an
+active cook and start or reset timers. It never configures Wi-Fi, installs or
+starts a recipe, changes a temperature target, ignites an appliance, or changes
+a grill mode.
 
 Pairing keys, cloud device passwords and tokens, MQTT passwords, app captures,
 and runtime JSON are private runtime data and are excluded from the repository.

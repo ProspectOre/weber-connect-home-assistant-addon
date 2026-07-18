@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.1.0 — 2026-07-17
+
+- Added live Weber companion WebSocket support alongside the existing REST
+  snapshots, while retaining BLE as the preferred local transport.
+- Added Home Assistant entities for the active recipe, current instruction,
+  full ordered instruction list, cook target, cook time remaining, cavity
+  temperatures, and four timers. Values that depend on Weber's live companion
+  socket remain empty when Weber does not return that session data.
+- Added optional MQTT controls to confirm the current recipe step, stop the
+  active cook, and start or reset timers. Controls are disabled by default,
+  validated at every boundary, and removed automatically when cloud access is
+  disabled.
+- Added protocol-level tests for cloud routing envelopes, installed-program
+  decoding, active-step selection, session commands, timer commands, and MQTT
+  control migration.
+- Verified simultaneous official-app Bluetooth use and Home Assistant cloud
+  probe telemetry on the documented hardware matrix. Recipe/program details
+  and remote commands were not returned to the bridge companion on that setup
+  and remain best-effort rather than physically verified.
+- Fixed Home Assistant MQTT discovery when a hub does not report a firmware
+  version by omitting the unknown optional field.
+- Added an explicit MQTT publishing-ready log line with the state topic,
+  discovery prefix, and discovery-topic count so Mosquitto connections can be
+  distinguished from Home Assistant discovery acceptance.
+- Clarified that Bluetooth proxies are not used by the add-on; initial pairing
+  and local BLE reads require the hub to be near the Home Assistant host's
+  Bluetooth adapter.
+- Clarified that reconnecting Home Assistant tries direct Bluetooth first but
+  continues through cloud when local Bluetooth is unavailable.
+- Made **Forget hub** show immediate progress while Bluetooth, cloud, and MQTT
+  sessions are being closed.
+- Removed the redundant version label from Settings and clarified that cloud
+  coexistence guarantees probe readings, while rich cook context depends on
+  Weber's response.
+- The bridge still does not install or start recipes, change temperature
+  targets, ignite an appliance, configure Wi-Fi, or change grill modes.
+
 ## 2.0.2 — 2026-07-17
 
 - Made the Bluetooth prerequisite explicit at every pairing entry point: fully

@@ -62,7 +62,12 @@ class PanelUiContractTests(unittest.TestCase):
         self.assertEqual(by_id["main"][1].get("tabindex"), "-1")
         self.assertEqual(by_id["announcer"][1].get("aria-live"), "polite")
         self.assertEqual(by_id["toast-stack"][1].get("aria-live"), "polite")
-        for dialog_id in ("settings-dialog", "handoff-dialog", "nickname-dialog"):
+        for dialog_id in (
+            "settings-dialog",
+            "handoff-dialog",
+            "nickname-dialog",
+            "cook-dialog",
+        ):
             attrs = by_id[dialog_id][1]
             self.assertEqual(attrs.get("role"), "dialog")
             self.assertEqual(attrs.get("aria-modal"), "true")
@@ -82,20 +87,27 @@ class PanelUiContractTests(unittest.TestCase):
         expected = (
             "Unofficial · Home Assistant",
             "Weber Connect for Home Assistant",
-            "Unofficial · Read-only",
+            "Unofficial · <a href=",
             "Set Up My Hub",
-            "Connect once. Cook anywhere.",
+            "Connect your hub.",
             "Local only",
             "Use Weber app",
             "Weber app + Home Assistant",
             "Set up Weber app access",
             "Start pairing",
             "Release Bluetooth",
-            "Reconnect now",
-            "Manual reconnect",
-            "Automatic reconnect is off",
-            "Weber app access",
-            "Bluetooth available",
+            "Reconnect Home Assistant",
+            "Auto-connect off",
+            "Temperature updates are on",
+            "Use both at the same time",
+            "Update frequency",
+            "Forgetting...",
+            "If Bluetooth is out of range, readings continue through cloud when available.",
+            "Active cook",
+            "All steps",
+            "Confirm step",
+            "Stop recipe",
+            'act("control", { type: "cook", action: "confirm" })',
             "Before pairing, fully close the Weber app on every nearby phone or tablet",
             "It cannot pair while the app is connected over Bluetooth",
             "The physical probe number will always remain visible",

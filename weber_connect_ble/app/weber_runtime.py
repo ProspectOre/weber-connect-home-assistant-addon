@@ -66,8 +66,9 @@ def parse_whole_number(value: object, label: str) -> int:
 class BridgeSettings:
     address: str | None = None
     poll_seconds: int = 10
-    handoff_minutes: int = 15
+    handoff_minutes: int = 0
     probe_names: dict[int, str] = field(default_factory=dict)
+    remote_controls_enabled: bool = False
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> BridgeSettings:
@@ -76,23 +77,33 @@ class BridgeSettings:
             raise ValueError("address must be a string or null.")
         poll_seconds = parse_whole_number(payload.get("poll_seconds", 10), "poll_seconds")
         handoff_minutes = parse_whole_number(
-            payload.get("handoff_minutes", 15), "handoff_minutes"
+            payload.get("handoff_minutes", 0), "handoff_minutes"
         )
+        remote_controls_enabled = payload.get("remote_controls_enabled", False)
+        if not isinstance(remote_controls_enabled, bool):
+            raise ValueError("remote_controls_enabled must be true or false.")
         return cls(
             address=address.strip() if address and address.strip() else None,
             poll_seconds=max(10, min(3600, poll_seconds)),
             handoff_minutes=max(0, min(240, handoff_minutes)),
             probe_names=normalize_probe_names(payload.get("probe_names")),
+            remote_controls_enabled=remote_controls_enabled,
         )
 
     def updated(self, payload: Mapping[str, Any]) -> BridgeSettings:
-        allowed = {"poll_seconds", "handoff_minutes", "probe_names"}
+        allowed = {
+            "poll_seconds",
+            "handoff_minutes",
+            "probe_names",
+            "remote_controls_enabled",
+        }
         unknown = set(payload) - allowed
         if unknown:
             raise ValueError(f"Unknown setting: {sorted(unknown)[0]}.")
         poll_seconds = self.poll_seconds
         handoff_minutes = self.handoff_minutes
         probe_names = self.probe_names
+        remote_controls_enabled = self.remote_controls_enabled
         if "poll_seconds" in payload:
             poll_seconds = max(
                 10,
@@ -105,11 +116,16 @@ class BridgeSettings:
             )
         if "probe_names" in payload:
             probe_names = normalize_probe_names(payload["probe_names"])
+        if "remote_controls_enabled" in payload:
+            remote_controls_enabled = payload["remote_controls_enabled"]
+            if not isinstance(remote_controls_enabled, bool):
+                raise ValueError("remote_controls_enabled must be true or false.")
         return replace(
             self,
             poll_seconds=poll_seconds,
             handoff_minutes=handoff_minutes,
             probe_names=probe_names,
+            remote_controls_enabled=remote_controls_enabled,
         )
 
     def with_address(self, address: str | None) -> BridgeSettings:
@@ -121,6 +137,7 @@ class BridgeSettings:
             "poll_seconds": self.poll_seconds,
             "handoff_minutes": self.handoff_minutes,
             "probe_names": {str(number): name for number, name in self.probe_names.items()},
+            "remote_controls_enabled": self.remote_controls_enabled,
         }
 
 
@@ -146,6 +163,8 @@ class RuntimeState:
     cloud_session_id: str | None = None
     cloud_after_id: int = 0
     cloud_snapshot_count: int = 0
+    control_last_command_at: str | None = None
+    control_error: str | None = None
     consecutive_failures: int = 0
     next_retry_seconds: int | None = None
     loop_beat: str | None = None

@@ -457,6 +457,24 @@ class PanelFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(controller.runtime.handoff_until)
         await controller.stop()
 
+    async def test_cloud_install_defaults_to_phone_and_remembers_reconnect(self) -> None:
+        panel.write_json_atomic(self.data_dir / "pairing_summary.json", summary())
+        panel.write_json_atomic(
+            self.data_dir / "cloud_credentials.json",
+            panel.CloudConfig.generate(COMPANION_ID).as_dict(),
+        )
+
+        controller = self.controller()
+        self.assertTrue(controller.runtime.handoff_active)
+        self.assertTrue(panel.read_json(controller.handoff_file)["active"])
+
+        await controller.resume()
+        reloaded = self.controller()
+        self.assertFalse(reloaded.runtime.handoff_active)
+        self.assertFalse(panel.read_json(reloaded.handoff_file)["active"])
+        await controller.stop()
+        await reloaded.stop()
+
     async def test_load_expired_handoff_is_cleared(self) -> None:
         panel.write_json_atomic(
             self.data_dir / "handoff.json",
@@ -540,6 +558,24 @@ class PanelFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sessions[0].publishes, 2)
         await controller.stop()
 
+    async def test_mqtt_command_callback_routes_success_and_failure(self) -> None:
+        controller = self.controller()
+        controller._event_loop = asyncio.get_running_loop()
+        successful = mock.AsyncMock(return_value={"ok": True})
+        controller.remote_command = successful
+        controller._mqtt_command_received("root/command/cook/confirm", "confirm")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        successful.assert_awaited_once()
+
+        failing = mock.AsyncMock(side_effect=RuntimeError("rejected"))
+        controller.remote_command = failing
+        with self.assertLogs("weber_connect_panel", level="WARNING"):
+            controller._mqtt_command_received("root/command/cook/stop", "stop")
+            await asyncio.sleep(0.05)
+        failing.assert_awaited_once()
+        await controller.stop()
+
     async def test_forget_without_address_still_succeeds(self) -> None:
         controller = self.controller()
         no_address = summary()
@@ -569,6 +605,14 @@ class PanelFlowTests(unittest.IsolatedAsyncioTestCase):
         await controller.stop()
 
     # -- bridge loop --------------------------------------------------------
+
+    async def test_wake_queued_before_wait_is_not_lost(self) -> None:
+        controller = self.controller()
+        controller._wake.set()
+        controller._wake.set()
+        self.assertTrue(await controller._wait_for_wake(0.01))
+        self.assertFalse(await controller._wait_for_wake(0.01))
+        await controller.stop()
 
     async def test_bridge_loop_polls_paired_hub(self) -> None:
         reads = asyncio.Event()

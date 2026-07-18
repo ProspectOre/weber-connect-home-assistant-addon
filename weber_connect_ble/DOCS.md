@@ -15,8 +15,15 @@ Assistant continues reading probe telemetry. The bridge creates its own Weber
 companion identity; users do not need to reveal a Weber account password or
 extract a secret from a phone. A **Local only** setup remains available.
 
-The integration is read-only. It does not start recipes, change targets or
-timers, configure Wi-Fi, or control a grill.
+Monitoring always includes the cloud fields Weber supplies. Home Assistant
+creates entities for the active cook title, installed guidance, temperatures,
+progress, and timers, but rich session fields remain empty when Weber does not
+return them to the independently paired bridge companion. A separate setting
+can expose a deliberately narrow, experimental set of remote commands: confirm
+the current step, stop the active cook, and start or reset timers. Remote
+commands are disabled by default. The integration does not install or start
+recipes, change temperature targets, configure Wi-Fi, ignite an appliance, or
+change grill modes.
 
 ## Requirements
 
@@ -27,20 +34,33 @@ timers, configure Wi-Fi, or control a grill.
 - Internet access for the recommended Weber app access setup; **Local only**
   works without it.
 
+Bluetooth is direct from the add-on container to the Home Assistant host's
+BlueZ service. Home Assistant Bluetooth proxies are not used by this add-on.
+Initial pairing and local BLE reads therefore require the hub to be near the
+Home Assistant machine or its attached Bluetooth adapter.
+
 ## Verified Compatibility
 
-The 2.0 physical test matrix is intentionally specific:
+The current physical test matrix is intentionally specific:
 
 | Component | Verified setup |
 | --- | --- |
-| Hub | Weber Connect Hub |
-| Home Assistant host | Home Assistant Yellow |
-| Phone client | Official Weber app on Android |
+| Hub | Weber Connect Hub, firmware `2.0.3_7398` |
+| Home Assistant host | Home Assistant Yellow, Home Assistant `2026.7.2` |
+| Phone client | Official Weber app `2.10.0.2439` on Samsung Galaxy Tab A9+ (`SM-X210`, Android 16) |
 | Local transport | Bluetooth Low Energy through host BlueZ/D-Bus |
 | Shared-use path | Official app owns BLE while Home Assistant receives Weber Cloud probe snapshots |
-| Cook scenario | Probe telemetry from a recipe started in the official app |
+| Cook scenario | Matching Probe 2 telemetry from a T-Bone Steak recipe started in the official app |
+| MQTT discovery | Probe, recipe, instruction, progress, cavity, timer, connectivity, and publishing entities accepted by Home Assistant |
+| Live cadence | Configured 10-second cadence; about 12 seconds end-to-end during the test |
 
-The release also passes 302 deterministic tests, strict type checking, linting,
+The test did **not** receive recipe title or instruction data through the
+bridge companion's live WebSocket, even though REST probe snapshots continued.
+The official app also logged that it could not fetch the cook-program details.
+Recipe detail and remote cook/timer commands therefore remain implemented but
+not physically verified on this matrix.
+
+The release also passes more than 300 deterministic tests, strict type checking, linting,
 release validation, and a 95% branch-coverage gate. Automated tests exercise
 pairing, cloud registration and authentication, appliance association,
 pagination, handoff, MQTT discovery, persistence, malformed input, stale data,
@@ -171,20 +191,38 @@ BLE connection cleanly.
 
 ## Recipes And Cooking Data
 
-Starting a recipe in the official app works while the app uses Bluetooth. The
-hub continues uploading the cook session, and Home Assistant receives the new
-probe snapshots while the phone remains connected.
+Starting a recipe in the official app works while the app uses Bluetooth. On
+the verified setup, the hub continued uploading current probe snapshots and
+Home Assistant received the matching probe temperature while the app remained
+connected. Live recipe/program detail is best-effort: Weber may provide REST
+probe history without returning the companion WebSocket session used for title,
+instructions, progress, timers, and commands.
 
-Current Home Assistant entities expose:
+Current Home Assistant entities include:
 
 - Probe temperature
 - Probe connection/state
 - Probe battery when available
+- Cavity temperatures when reported by the appliance
+- Active recipe title and state, when returned by Weber
+- Current instruction and ordered guidance, when returned by Weber
+- Current cook target, mode, elapsed time, and remaining time, when returned
+- Four timer values, when returned
 - Bridge/cloud connectivity and source metadata
 
-The bridge does not currently expose the recipe name, recipe instructions,
-doneness selection, target changes, or timers as controllable Home Assistant
-entities. It never sends recipe or grill-control commands.
+If **Remote cook controls** is enabled in the panel, MQTT discovery also adds:
+
+- **Confirm Current Step**
+- **Stop Active Cook**
+- **Start Timer 1–4**, with a duration in seconds
+- **Reset Timer 1–4**
+
+These experimental controls require configured and enabled Weber Cloud access
+and a live session returned to the bridge companion. Disabling or removing
+cloud access turns the setting off and removes the control entities. Monitoring
+entities remain available. The bridge does not expose doneness or
+temperature-target changes, recipe installation/start, ignition, or grill-mode
+changes.
 
 Weber cloud temperatures are encoded in tenths of a degree Celsius. The bridge
 normalizes them and publishes correct Fahrenheit and Celsius values. Existing
@@ -201,7 +239,8 @@ Most settings live in the panel. Only two Supervisor options are exposed:
 | `mqtt` | empty | External MQTT broker settings; leave blank for automatic Mosquitto service discovery. |
 
 Panel settings include read interval, Bluetooth reconnect timing, probe
-nicknames, cloud pairing, cloud test/disable/removal, and **Forget This Hub**.
+nicknames, cloud pairing, opt-in remote cook controls, cloud
+test/disable/removal, and **Forget This Hub**.
 New installs use the **Live · 10 sec** local read interval. Existing
 installations retain their saved interval until it is changed in the panel.
 
@@ -220,6 +259,20 @@ With the optional nickname `Brisket`, these become
 `Brisket · Probe 1 Temperature`, `Brisket · Probe 1 State`, and
 `Brisket · Probe 1 Battery`. MQTT unique IDs stay unchanged, so renaming does
 not create a new entity.
+
+Cook/session monitoring adds:
+
+| Entity | Data |
+| --- | --- |
+| Active Recipe | Recipe title; attributes contain the ordered guidance and current cook context. |
+| Current Instruction | The instruction currently selected by the hub. |
+| Cook Target Temperature | Current program-step target when present. |
+| Cook Time Remaining | Remaining cook time in seconds when reported. |
+| Cavity 1–2 Temperature | Appliance cavity temperatures when reported. |
+| Timer 1–4 | Remaining timer duration in seconds. |
+
+Remote-control buttons and timer inputs only appear after **Remote cook
+controls** is explicitly turned on.
 
 Default state topic:
 
@@ -254,9 +307,14 @@ homeassistant/sensor/{device_id}_probe_1_battery/config
 
 ### No Home Assistant entities appear
 
-1. Check the panel footer for MQTT publishing status.
-2. Confirm the MQTT integration and broker are running.
-3. Reload MQTT entities or restart Home Assistant if discovery was only just
+1. Confirm the MQTT integration and broker are running.
+2. Check the add-on log for `MQTT publishing ready`. That line includes the
+   state topic, discovery prefix, and number of discovery topics published.
+3. If Mosquitto shows the add-on connected but Home Assistant still creates no
+   entities, confirm MQTT discovery is enabled in Home Assistant and that the
+   integration is listening on the same discovery prefix, normally
+   `homeassistant`.
+4. Reload MQTT entities or restart Home Assistant if discovery was only just
    enabled.
 
 ### Cloud pairing appears stuck
@@ -273,14 +331,49 @@ homeassistant/sensor/{device_id}_probe_1_battery/config
 1. Confirm the official app itself displays a current probe temperature.
 2. Start or resume a cook/recipe so the hub publishes current snapshots.
 3. Allow one or two configured poll intervals.
-4. Cloud is reported idle when no active snapshot arrives beyond the stale-data
+4. Inserted probes can take a moment to appear in Weber's cloud snapshot after
+   the official app connects. **Check connection** only proves the bridge
+   identity can access the hub; it does not force Weber to publish a new probe
+   snapshot.
+5. Cloud is reported idle when no active snapshot arrives beyond the stale-data
    grace window.
+
+### Recipe title or instructions do not appear
+
+1. Confirm **Weber app access** is configured, enabled, and passes **Test**.
+2. Start a guided recipe in the official app; a basic unguided probe target may
+   not have an installed instruction program.
+3. Confirm the hub is online so it can answer the live companion request.
+4. Check the panel's cloud detail for a live-session error. Probe history can
+   continue through REST even if the live WebSocket is unavailable.
+5. If temperatures update but guidance stays empty, this may be a Weber
+   companion limitation rather than a setup error. That is the observed result
+   on the currently verified hardware; include your redacted model, firmware,
+   app version, and region in a compatibility report.
+
+### Remote control entities do not appear
+
+1. Configure and test **Weber app access**.
+2. Open **Settings** and turn on **Remote cook controls**.
+3. Confirm the MQTT broker is connected. The broker is part of the command
+   trust boundary and should not be exposed to untrusted clients.
+4. Recipe confirmation and stop buttons are unavailable when no active cook is
+   present; timer controls remain tied to cloud availability.
 
 ### The phone cannot connect
 
 1. Select **Use Weber app**, then confirm **Release Bluetooth**.
 2. Wait for **Bluetooth available** before opening the official app.
 3. If needed, force-close and reopen the Weber app after the release.
+
+### Reconnect Home Assistant stays on cloud
+
+**Reconnect Home Assistant** asks the bridge to try direct Bluetooth again.
+If the hub is out of range, asleep, busy with another BLE client, or not near
+the Home Assistant host Bluetooth adapter, the bridge keeps using Weber Cloud
+when cloud access is available. Move the hub near the Home Assistant adapter,
+fully close the Weber app, wake the hub, and try again if a direct local BLE
+read is required.
 
 ## Security And Privacy
 
@@ -291,8 +384,12 @@ homeassistant/sensor/{device_id}_probe_1_battery/config
 - Passwords and bearer tokens are excluded from logs and public status data.
 - Cloud support does not capture the official app, intercept TLS, or require a
   personal Weber login.
-- Enabling cloud sends authentication and cook-history requests to Weber's
-  service. Leaving it disabled keeps the bridge BLE/MQTT-only.
+- Enabling cloud sends authentication, live-session, installed-program, and
+  cook-history requests to Weber's service. Leaving it disabled keeps the
+  bridge BLE/MQTT-only.
+- Remote commands are disabled by default. When enabled, only active-cook
+  confirm/stop and timer start/reset commands are accepted, after topic,
+  payload, range, and session validation.
 - Do not attach private captures, pairing exports, phone app data, or runtime
   credential files to public issues.
 
