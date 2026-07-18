@@ -6,7 +6,8 @@
   snapshots, while retaining BLE as the preferred local transport.
 - Added Home Assistant entities for the active recipe, current instruction,
   full ordered instruction list, cook target, cook time remaining, cavity
-  temperatures, and four timers.
+  temperatures, and four timers. Values that depend on Weber's live companion
+  socket remain empty when Weber does not return that session data.
 - Added optional MQTT controls to confirm the current recipe step, stop the
   active cook, and start or reset timers. Controls are disabled by default,
   validated at every boundary, and removed automatically when cloud access is
@@ -14,6 +15,15 @@
 - Added protocol-level tests for cloud routing envelopes, installed-program
   decoding, active-step selection, session commands, timer commands, and MQTT
   control migration.
+- Verified simultaneous official-app Bluetooth use and Home Assistant cloud
+  probe telemetry on the documented hardware matrix. Recipe/program details
+  and remote commands were not returned to the bridge companion on that setup
+  and remain best-effort rather than physically verified.
+- Fixed Home Assistant MQTT discovery when a hub does not report a firmware
+  version by omitting the unknown optional field.
+- Removed the redundant version label from Settings and clarified that cloud
+  coexistence guarantees probe readings, while rich cook context depends on
+  Weber's response.
 - The bridge still does not install or start recipes, change temperature
   targets, ignite an appliance, configure Wi-Fi, or change grill modes.
 

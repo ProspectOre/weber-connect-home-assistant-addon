@@ -15,12 +15,15 @@ Assistant continues reading probe telemetry. The bridge creates its own Weber
 companion identity; users do not need to reveal a Weber account password or
 extract a secret from a phone. A **Local only** setup remains available.
 
-Monitoring includes the active cook title, installed guidance, temperatures,
-progress, and timers. A separate setting can expose a deliberately narrow set
-of remote commands: confirm the current step, stop the active cook, and start or
-reset timers. Remote commands are disabled by default. The integration does not
-install or start recipes, change temperature targets, configure Wi-Fi, ignite
-an appliance, or change grill modes.
+Monitoring always includes the cloud fields Weber supplies. Home Assistant
+creates entities for the active cook title, installed guidance, temperatures,
+progress, and timers, but rich session fields remain empty when Weber does not
+return them to the independently paired bridge companion. A separate setting
+can expose a deliberately narrow, experimental set of remote commands: confirm
+the current step, stop the active cook, and start or reset timers. Remote
+commands are disabled by default. The integration does not install or start
+recipes, change temperature targets, configure Wi-Fi, ignite an appliance, or
+change grill modes.
 
 ## Requirements
 
@@ -33,16 +36,24 @@ an appliance, or change grill modes.
 
 ## Verified Compatibility
 
-The 2.0 physical test matrix is intentionally specific:
+The current physical test matrix is intentionally specific:
 
 | Component | Verified setup |
 | --- | --- |
-| Hub | Weber Connect Hub |
-| Home Assistant host | Home Assistant Yellow |
-| Phone client | Official Weber app on Android |
+| Hub | Weber Connect Hub, firmware `2.0.3_7398` |
+| Home Assistant host | Home Assistant Yellow, Home Assistant `2026.7.2` |
+| Phone client | Official Weber app `2.10.0.2439` on Samsung Galaxy Tab A9+ (`SM-X210`, Android 16) |
 | Local transport | Bluetooth Low Energy through host BlueZ/D-Bus |
 | Shared-use path | Official app owns BLE while Home Assistant receives Weber Cloud probe snapshots |
-| Cook scenario | Probe telemetry from a recipe started in the official app |
+| Cook scenario | Matching Probe 2 telemetry from a T-Bone Steak recipe started in the official app |
+| MQTT discovery | Probe, recipe, instruction, progress, cavity, timer, connectivity, and publishing entities accepted by Home Assistant |
+| Live cadence | Configured 10-second cadence; about 12 seconds end-to-end during the test |
+
+The test did **not** receive recipe title or instruction data through the
+bridge companion's live WebSocket, even though REST probe snapshots continued.
+The official app also logged that it could not fetch the cook-program details.
+Recipe detail and remote cook/timer commands therefore remain implemented but
+not physically verified on this matrix.
 
 The release also passes more than 300 deterministic tests, strict type checking, linting,
 release validation, and a 95% branch-coverage gate. Automated tests exercise
@@ -175,20 +186,23 @@ BLE connection cleanly.
 
 ## Recipes And Cooking Data
 
-Starting a recipe in the official app works while the app uses Bluetooth. The
-hub continues uploading the cook session, and Home Assistant receives the live
-session and cook-history data while the phone remains connected.
+Starting a recipe in the official app works while the app uses Bluetooth. On
+the verified setup, the hub continued uploading current probe snapshots and
+Home Assistant received the matching probe temperature while the app remained
+connected. Live recipe/program detail is best-effort: Weber may provide REST
+probe history without returning the companion WebSocket session used for title,
+instructions, progress, timers, and commands.
 
-Current Home Assistant entities expose:
+Current Home Assistant entities include:
 
 - Probe temperature
 - Probe connection/state
 - Probe battery when available
 - Cavity temperatures when reported by the appliance
-- Active recipe title and state
-- Current instruction, plus the ordered instruction list as recipe attributes
-- Current cook target, mode, elapsed time, and remaining time
-- Four timer values
+- Active recipe title and state, when returned by Weber
+- Current instruction and ordered guidance, when returned by Weber
+- Current cook target, mode, elapsed time, and remaining time, when returned
+- Four timer values, when returned
 - Bridge/cloud connectivity and source metadata
 
 If **Remote cook controls** is enabled in the panel, MQTT discovery also adds:
@@ -198,9 +212,10 @@ If **Remote cook controls** is enabled in the panel, MQTT discovery also adds:
 - **Start Timer 1–4**, with a duration in seconds
 - **Reset Timer 1–4**
 
-These controls require configured and enabled Weber Cloud access. Disabling or
-removing cloud access turns the setting off and removes the control entities.
-Monitoring entities remain available. The bridge does not expose doneness or
+These experimental controls require configured and enabled Weber Cloud access
+and a live session returned to the bridge companion. Disabling or removing
+cloud access turns the setting off and removes the control entities. Monitoring
+entities remain available. The bridge does not expose doneness or
 temperature-target changes, recipe installation/start, ignition, or grill-mode
 changes.
 
@@ -316,8 +331,11 @@ homeassistant/sensor/{device_id}_probe_1_battery/config
    not have an installed instruction program.
 3. Confirm the hub is online so it can answer the live companion request.
 4. Check the panel's cloud detail for a live-session error. Probe history can
-   continue through REST even if the live WebSocket path is temporarily
-   unavailable.
+   continue through REST even if the live WebSocket is unavailable.
+5. If temperatures update but guidance stays empty, this may be a Weber
+   companion limitation rather than a setup error. That is the observed result
+   on the currently verified hardware; include your redacted model, firmware,
+   app version, and region in a compatibility report.
 
 ### Remote control entities do not appear
 

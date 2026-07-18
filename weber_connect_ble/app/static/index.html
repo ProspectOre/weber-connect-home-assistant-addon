@@ -869,7 +869,7 @@
   <section class="sheet settings-sheet" id="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
     <div class="sheet-handle" aria-hidden="true"></div>
     <div class="sheet-header">
-      <div><div class="section-kicker">Unofficial add-on · 2.0</div><h2 class="sheet-title" id="settings-title">Settings</h2><p class="sheet-subtitle">Connection behavior, Weber app access, and cloud coexistence.</p></div>
+      <div><h2 class="sheet-title" id="settings-title">Settings</h2><p class="sheet-subtitle">Connection behavior, Weber app access, and cloud coexistence.</p></div>
       <button class="icon-button sheet-close" type="button" data-close="settings" aria-label="Close settings">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
@@ -1182,7 +1182,7 @@
       const cloudLive = st.source === "cloud" && st.readings_stale !== true;
       return `<div class="connection">
         <div class="state-orbit ${cloudLive ? "cloud" : "handoff"}" aria-hidden="true"></div>
-        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">Weber app access</span><span class="transport-chip ${cloudLive ? "cloud" : ""}">${icon(cloudLive ? "cloud" : "phone")}${cloudLive ? "Cloud live" : "Bluetooth available"}</span></div><h2 class="connection-title ${cloudLive ? "cloud" : "handoff"}">${cloudLive ? "Following through cloud" : "Ready for the Weber app"}</h2><p class="connection-name">${hubName}</p><p class="connection-meta">${sub}</p><p class="connection-detail">${cloudLive ? "The Weber app can use Bluetooth while Home Assistant receives the cook through Weber Cloud." : "Open the Weber app to connect. Select Reconnect now when you want Home Assistant to use Bluetooth again."}</p></div>
+        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">Weber app access</span><span class="transport-chip ${cloudLive ? "cloud" : ""}">${icon(cloudLive ? "cloud" : "phone")}${cloudLive ? "Cloud live" : "Bluetooth available"}</span></div><h2 class="connection-title ${cloudLive ? "cloud" : "handoff"}">${cloudLive ? "Following through cloud" : "Ready for the Weber app"}</h2><p class="connection-name">${hubName}</p><p class="connection-meta">${sub}</p><p class="connection-detail">${cloudLive ? "The Weber app can use Bluetooth while Home Assistant receives probe readings through Weber Cloud." : "Open the Weber app to connect. Select Reconnect now when you want Home Assistant to use Bluetooth again."}</p></div>
         <div class="connection-actions">${actionButton("Reconnect now", "resume", "secondary")}</div>
       </div>`;
     }
@@ -1191,7 +1191,7 @@
       const cloudIdle = cloudSource && st.cloud?.state === "idle";
       return `<div class="connection">
         <div class="state-orbit ${cloudSource ? "cloud" : "online"}" aria-hidden="true"></div>
-        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">${cloudIdle ? "Ready for a cook" : "Live cook"}</span><span class="transport-chip ${cloudSource ? "cloud" : ""}">${icon(cloudSource ? "cloud" : "bluetooth")}${cloudSource ? "Weber Cloud" : "Local Bluetooth"}</span></div><h2 class="connection-title ${cloudSource ? "cloud" : "online"}">${cloudIdle ? "Cloud ready" : cloudSource ? "Cloud connected" : "Connected"}</h2><p class="connection-name">${hubName}</p><p class="connection-meta" data-last-read>${esc(timeAgo(st.last_read_at))}</p><p class="connection-detail">${cloudIdle ? "Start a cook in the Weber app and Home Assistant will follow it automatically." : cloudSource ? "Home Assistant is receiving current cook snapshots from Weber Cloud." : "Home Assistant has a direct, local connection to your hub."}</p></div>
+        <div class="connection-copy"><div class="connection-eyebrow"><span class="eyebrow">${cloudIdle ? "Ready for a cook" : "Live cook"}</span><span class="transport-chip ${cloudSource ? "cloud" : ""}">${icon(cloudSource ? "cloud" : "bluetooth")}${cloudSource ? "Weber Cloud" : "Local Bluetooth"}</span></div><h2 class="connection-title ${cloudSource ? "cloud" : "online"}">${cloudIdle ? "Cloud ready" : cloudSource ? "Cloud connected" : "Connected"}</h2><p class="connection-name">${hubName}</p><p class="connection-meta" data-last-read>${esc(timeAgo(st.last_read_at))}</p><p class="connection-detail">${cloudIdle ? "Start a cook in the Weber app and Home Assistant will follow its probe readings automatically." : cloudSource ? "Home Assistant is receiving current probe snapshots from Weber Cloud." : "Home Assistant has a direct, local connection to your hub."}</p></div>
         <div class="connection-actions">${actionButton("Use Weber app", "open-handoff", "secondary", "phone")}</div>
       </div>`;
     }

@@ -82,10 +82,12 @@ normalization boundary publishes both Celsius and Fahrenheit values.
    uses the configured last will.
 10. BLE is preferred whenever available. Cloud polling occurs only after opt-in
     and when BLE is handed off or unavailable.
-11. Cloud monitoring is always available after cloud opt-in. Remote commands
-    require a second opt-in and are allowlisted to active-cook confirm/stop and
-    timer start/reset. Wi-Fi provisioning, recipe installation/start, target
-    changes, ignition, and grill-mode control remain out of scope.
+11. Cloud probe monitoring is available after cloud opt-in when the hub is
+    online and uploading snapshots. Rich cook-session fields depend on Weber
+    returning live companion data. Remote commands require a second opt-in and
+    are allowlisted to active-cook confirm/stop and timer start/reset. Wi-Fi
+    provisioning, recipe installation/start, target changes, ignition, and
+    grill-mode control remain out of scope.
 12. Authentication success alone is insufficient; setup verifies that the
     identity can access the paired appliance.
 13. Disabling or removing cloud access closes the live socket, disables remote
