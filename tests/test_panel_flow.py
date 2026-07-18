@@ -457,6 +457,24 @@ class PanelFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(controller.runtime.handoff_until)
         await controller.stop()
 
+    async def test_cloud_install_defaults_to_phone_and_remembers_reconnect(self) -> None:
+        panel.write_json_atomic(self.data_dir / "pairing_summary.json", summary())
+        panel.write_json_atomic(
+            self.data_dir / "cloud_credentials.json",
+            panel.CloudConfig.generate(COMPANION_ID).as_dict(),
+        )
+
+        controller = self.controller()
+        self.assertTrue(controller.runtime.handoff_active)
+        self.assertTrue(panel.read_json(controller.handoff_file)["active"])
+
+        await controller.resume()
+        reloaded = self.controller()
+        self.assertFalse(reloaded.runtime.handoff_active)
+        self.assertFalse(panel.read_json(reloaded.handoff_file)["active"])
+        await controller.stop()
+        await reloaded.stop()
+
     async def test_load_expired_handoff_is_cleared(self) -> None:
         panel.write_json_atomic(
             self.data_dir / "handoff.json",

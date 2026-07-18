@@ -224,7 +224,8 @@ class HubController:
                 self.runtime.cloud_state = "error"
                 self.runtime.cloud_error = f"Could not read cloud settings: {exc}"
                 LOGGER.warning("Could not read cloud settings: %r", exc)
-        if self.handoff_file.exists():
+        handoff_preference_loaded = self.handoff_file.exists()
+        if handoff_preference_loaded:
             try:
                 handoff = read_json(self.handoff_file)
                 active = handoff.get("active") is True
@@ -242,7 +243,17 @@ class HubController:
             except (OSError, ValueError) as exc:
                 LOGGER.warning("Could not read handoff state: %r", exc)
             if not self.runtime.handoff_active:
-                self.handoff_file.unlink(missing_ok=True)
+                self._persist_ble_preference()
+        elif (
+            self.paired
+            and self.cloud_config is not None
+            and self.cloud_config.enabled
+        ):
+            # Cloud-enabled installs default to phone + Home Assistant.  An
+            # explicit reconnect is saved as inactive and remains respected.
+            self.runtime.handoff_active = True
+            self.runtime.handoff_until = None
+            self._save_handoff()
 
     def _save_settings(self) -> None:
         write_json_atomic(self.settings_file, self.settings.as_dict())
@@ -261,6 +272,12 @@ class HubController:
 
     def _clear_handoff(self) -> None:
         self.handoff_file.unlink(missing_ok=True)
+
+    def _persist_ble_preference(self) -> None:
+        if self.cloud_config is not None and self.cloud_config.enabled:
+            self._save_handoff()
+        else:
+            self._clear_handoff()
 
     # -- derived state ------------------------------------------------------
 
@@ -692,7 +709,7 @@ class HubController:
                     await asyncio.to_thread(self.dependencies.release, address)
         except Exception as exc:
             self.runtime.handoff_active = False
-            self._clear_handoff()
+            self._persist_ble_preference()
             return {"ok": False, "error": f"Could not release the hub: {exc}"}
 
         if parsed_minutes > 0:
@@ -716,7 +733,7 @@ class HubController:
                 LOGGER.info("Handoff window ended; reconnecting to hub")
                 self.runtime.handoff_active = False
                 self.runtime.handoff_until = None
-                self._clear_handoff()
+                self._persist_ble_preference()
                 self._wake.set()
         finally:
             if self._auto_resume_task is asyncio.current_task():
@@ -732,7 +749,7 @@ class HubController:
         self.runtime.handoff_active = False
         self.runtime.handoff_until = None
         self.runtime.handoff_token += 1
-        self._clear_handoff()
+        self._persist_ble_preference()
         self._wake.set()
         return {"ok": True}
 
