@@ -312,7 +312,7 @@ class WeberCloudSocketClient:
         except ImportError as exc:
             raise WeberCloudSocketError("The websockets runtime dependency is missing.") from exc
         self._connection = connect(
-            f"wss://{self.cloud_client.config_host}{SOCKET_PATH}",
+            f"wss://{self.cloud_client.messaging_host}{SOCKET_PATH}",
             additional_headers={"Authorization": f"Bearer {self.cloud_client.token()}"},
             user_agent_header=self.cloud_client.user_agent,
             open_timeout=self.timeout,

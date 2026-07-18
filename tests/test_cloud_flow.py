@@ -302,6 +302,7 @@ class LiveSocketClientTests(unittest.TestCase):
         self.assertEqual(socket.session_calls, [(APPLIANCE_ID, active_cook, "confirm")])
         self.assertEqual(socket.timer_calls, [(APPLIANCE_ID, 1, "start", 30)])
         self.assertEqual(client.config_host, cloud.API_HOST)
+        self.assertEqual(client.messaging_host, cloud.MESSAGING_HOST)
         self.assertEqual(client.user_agent, cloud.USER_AGENT)
 
         client.close()

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 API_HOST = "api.walker-cloud.com"
+MESSAGING_HOST = "messaging.walker-cloud.com"
 USER_AGENT = "okhttp/5.3.0"
 STALE_GRACE_SECONDS = 60.0
 
@@ -294,6 +295,10 @@ class WeberCloudClient:
     @property
     def config_host(self) -> str:
         return API_HOST
+
+    @property
+    def messaging_host(self) -> str:
+        return MESSAGING_HOST
 
     @property
     def user_agent(self) -> str:

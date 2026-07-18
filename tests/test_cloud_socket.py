@@ -69,6 +69,7 @@ def cloud_client() -> SimpleNamespace:
     return SimpleNamespace(
         config=SimpleNamespace(device_id=COMPANION_ID),
         config_host="api.walker-cloud.com",
+        messaging_host="messaging.walker-cloud.com",
         user_agent="test",
         token=lambda: "token",
     )
@@ -274,6 +275,10 @@ class ClientTests(unittest.TestCase):
             client.close()
         self.assertTrue(connection.closed)
         self.assertEqual(len(connect_calls), 1)
+        self.assertEqual(
+            connect_calls[0][0],
+            "wss://messaging.walker-cloud.com/2/messaging/websocket/companion",
+        )
         self.assertEqual(
             connect_calls[0][1]["additional_headers"]["Authorization"],
             "Bearer token",
