@@ -84,7 +84,7 @@ class EnvelopeTests(unittest.TestCase):
         self.assertEqual(decoded.source_id, COMPANION_ID)
         self.assertEqual(decoded.target_id, APPLIANCE_ID)
         self.assertEqual(decoded.sequence, 123)
-        self.assertEqual(decoded.message_version, 11)
+        self.assertEqual(decoded.message_version, 10)
         self.assertEqual(decoded.type_value, 0x0B)
         self.assertEqual(decoded.payload, b"\x01\x03")
 
@@ -199,21 +199,33 @@ class ClientTests(unittest.TestCase):
         status_payload = tlv(4, probe)
         responses = [
             socket.encode_routed_message(APPLIANCE_ID, COMPANION_ID, 1, 0x80, status_payload),
-            socket.encode_routed_message(APPLIANCE_ID, COMPANION_ID, 2, 0x86, program_payload()),
+            socket.encode_routed_message(
+                APPLIANCE_ID,
+                COMPANION_ID,
+                2,
+                0x86,
+                program_payload(),
+                message_version=11,
+            ),
         ]
         connection = FakeConnection(responses)
-        client = socket.WeberCloudSocketClient(cloud_client())
+        client = socket.WeberCloudSocketClient(cloud_client(), subscribe_delay=0)
         client._connection = connection
 
         status = client.live_status(APPLIANCE_ID)
 
         self.assertEqual(status["active_cook"]["title"], "Weeknight Steak")
         sent = [socket.decode_routed_message(row) for row in connection.sent]
-        self.assertEqual([(row.type_value, row.payload) for row in sent], [(0x05, b""), (0x0B, b"\x01\x00")])
+        self.assertEqual(
+            [row.type_value for row in sent],
+            [0x0E, 0x05, 0x09, 0x07, 0x0B, 0x0E, 0x09, 0x05, 0x07, 0x0B],
+        )
+        self.assertEqual(sent[2].payload[:2], b"\x15\x04")
+        self.assertEqual(sent[-1].payload, b"\x01\x00")
 
     def test_session_and_timer_commands_match_official_payloads(self) -> None:
         connection = FakeConnection()
-        client = socket.WeberCloudSocketClient(cloud_client())
+        client = socket.WeberCloudSocketClient(cloud_client(), subscribe_delay=0)
         client._connection = connection
         active = {
             "program_id": str(PROGRAM_ID),
@@ -235,7 +247,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(messages[2].payload, b"\x02\x02\x00\x00\x00\x00")
 
     def test_control_validation(self) -> None:
-        client = socket.WeberCloudSocketClient(cloud_client())
+        client = socket.WeberCloudSocketClient(cloud_client(), subscribe_delay=0)
         with self.assertRaises(ValueError):
             client.timer_command(APPLIANCE_ID, 4, "reset")
         with self.assertRaises(ValueError):
@@ -269,7 +281,7 @@ class ClientTests(unittest.TestCase):
                 "websockets.sync.client": client_module,
             },
         ):
-            client = socket.WeberCloudSocketClient(cloud_client())
+            client = socket.WeberCloudSocketClient(cloud_client(), subscribe_delay=0)
             self.assertIs(client._connect(), connection)
             self.assertIs(client._connect(), connection)
             client.close()
@@ -307,7 +319,9 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(failed.closed)
 
     def test_receive_deadline_and_close_errors_are_safe(self) -> None:
-        client = socket.WeberCloudSocketClient(cloud_client(), timeout=1)
+        client = socket.WeberCloudSocketClient(
+            cloud_client(), timeout=1, subscribe_delay=0
+        )
         client._connection = FakeConnection()
         with mock.patch.object(socket.time, "monotonic", side_effect=[0.0, 2.0]):
             with self.assertRaises(TimeoutError):
@@ -330,11 +344,16 @@ class ClientTests(unittest.TestCase):
                 APPLIANCE_ID, COMPANION_ID, 1, 0x80, status_payload
             ),
             socket.encode_routed_message(
-                APPLIANCE_ID, COMPANION_ID, 2, 0x86, program_payload()
+                APPLIANCE_ID,
+                COMPANION_ID,
+                2,
+                0x86,
+                program_payload(),
+                message_version=11,
             ),
         ]
         connection = FakeConnection(responses)
-        client = socket.WeberCloudSocketClient(cloud_client())
+        client = socket.WeberCloudSocketClient(cloud_client(), subscribe_delay=0)
         client._connection = connection
         status = client.live_status(APPLIANCE_ID)
         self.assertEqual(len(status["programs"]), 1)

@@ -20,7 +20,7 @@ from saber_frames import parse_cook_session_status_payload
 SOCKET_PATH = "/2/messaging/websocket/companion"
 ROUTING_HEADER_LENGTH = 35
 TRANSPORT_HEADER_LENGTH = 6
-MESSAGE_VERSION = 11
+MESSAGE_VERSION = 10
 
 SESSION_TYPES = {0: "UNKNOWN", 1: "PROBED", 2: "TIMED", 3: "TIMER"}
 COOK_MODES = {
@@ -285,9 +285,16 @@ def active_cook_from_program(
 class WeberCloudSocketClient:
     """Persistent synchronous client; callers invoke it in a worker thread."""
 
-    def __init__(self, cloud_client: Any, *, timeout: float = 8.0) -> None:
+    def __init__(
+        self,
+        cloud_client: Any,
+        *,
+        timeout: float = 8.0,
+        subscribe_delay: float = 0.05,
+    ) -> None:
         self.cloud_client = cloud_client
         self.timeout = timeout
+        self.subscribe_delay = subscribe_delay
         self._connection: Any = None
         self._sequence = 1
         self._lock = threading.Lock()
@@ -362,11 +369,35 @@ class WeberCloudSocketClient:
             if message.type_value in accepted_types:
                 return message
 
+    def _subscribe(self, appliance_id: str) -> None:
+        """Send the request sequence used by the official companion client."""
+
+        now = int(time.time())
+
+        def timestamp(value: int) -> bytes:
+            return bytes([0x15, 0x04]) + struct.pack("<I", value)
+
+        requests = (
+            (0x0E, b""),
+            (0x05, b""),
+            (0x09, timestamp(now)),
+            (0x07, b""),
+            (0x0B, b"\x01\x00"),
+            (0x0E, b""),
+            (0x09, timestamp(now + 1)),
+            (0x05, b""),
+            (0x07, b""),
+        )
+        for type_value, payload in requests:
+            self._send(appliance_id, type_value, payload)
+            if self.subscribe_delay:
+                time.sleep(self.subscribe_delay)
+
     def live_status(self, appliance_id: str) -> dict[str, Any]:
         """Fetch live status and the installed program for each active probe."""
 
         with self._lock:
-            self._send(appliance_id, 0x05)
+            self._subscribe(appliance_id)
             response = self._receive_until({0x80})
             status = parse_cook_session_status_payload(response.payload)
             programs: list[dict[str, Any]] = []
