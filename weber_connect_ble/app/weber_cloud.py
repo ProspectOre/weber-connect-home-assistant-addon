@@ -310,8 +310,29 @@ class WeberCloudClient:
             socket_client.close()
 
     def live_status(self, appliance_id: str) -> dict[str, Any]:
+        try:
+            self.wake_messaging(appliance_id)
+        except Exception:
+            # The official client treats this preflight as best effort; the
+            # WebSocket may still be available when the status route is not.
+            pass
         status: dict[str, Any] = self._socket().live_status(appliance_id)
         return status
+
+    def wake_messaging(self, appliance_id: str) -> None:
+        """Prompt the hub relay before opening the companion WebSocket."""
+
+        normalized = appliance_id.replace(":", "").strip().lower()
+        if not HEX_ID_RE.fullmatch(normalized):
+            raise ValueError("Cloud appliance ID must be 32 hexadecimal characters.")
+        request = urllib.request.Request(
+            f"https://{MESSAGING_HOST}/1/messaging/device/{normalized}/status",
+            method="GET",
+        )
+        request.add_header("User-Agent", USER_AGENT)
+        request.add_header("Accept-Encoding", "gzip")
+        request.add_header("Authorization", f"Bearer {self.token()}")
+        self._open(request)
 
     def _socket(self) -> Any:
         if self._socket_client is None:

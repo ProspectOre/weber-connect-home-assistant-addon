@@ -291,7 +291,8 @@ class LiveSocketClientTests(unittest.TestCase):
             "server_timestamp": 10,
         }
 
-        merged = client._merge_live_status(APPLIANCE_ID, history)
+        with mock.patch.object(client, "wake_messaging") as wake:
+            merged = client._merge_live_status(APPLIANCE_ID, history)
         active_cook = merged["active_cook"]
         client.session_command(APPLIANCE_ID, active_cook, "confirm")
         client.timer_command(APPLIANCE_ID, 1, "start", 30)
@@ -304,11 +305,37 @@ class LiveSocketClientTests(unittest.TestCase):
         self.assertEqual(client.config_host, cloud.API_HOST)
         self.assertEqual(client.messaging_host, cloud.MESSAGING_HOST)
         self.assertEqual(client.user_agent, cloud.USER_AGENT)
+        wake.assert_called_once_with(APPLIANCE_ID)
 
         client.close()
         client.close()
         self.assertTrue(socket.closed)
         self.assertIsNone(client._socket_client)
+
+    def test_live_status_wakes_messaging_relay_with_authentication(self) -> None:
+        client = cloud.WeberCloudClient(config())
+        client._token = "token"
+        client._token_expiry = float("inf")
+        client._socket_client = self.FakeSocket()
+
+        with mock.patch.object(client, "_open", return_value=b"{}") as opened:
+            status = client.live_status(APPLIANCE_ID)
+
+        request = opened.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            f"https://{cloud.MESSAGING_HOST}/1/messaging/device/{APPLIANCE_ID}/status",
+        )
+        self.assertEqual(request.get_header("Authorization"), "Bearer token")
+        self.assertEqual(status["active_cook"]["title"], "Brisket")
+
+        with self.assertRaises(ValueError):
+            client.wake_messaging("bad")
+
+        with mock.patch.object(
+            client, "wake_messaging", side_effect=RuntimeError("offline")
+        ):
+            self.assertEqual(client.live_status(APPLIANCE_ID)["appliance_id"], APPLIANCE_ID)
 
     def test_live_failure_falls_back_and_lazy_socket_is_cached(self) -> None:
         client = cloud.WeberCloudClient(config())
