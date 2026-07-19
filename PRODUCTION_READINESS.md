@@ -48,7 +48,11 @@ Run with the host Bluetooth adapter disabled:
 5. Restart Home Assistant and verify automatic recovery.
 6. Disable local fallback and verify the phone/cloud default remains intact.
 
-### Two active ESPHome proxies
+### Extended compatibility: two active ESPHome proxies
+
+This is a non-blocking resilience scenario. No second proxy is available in the
+current test environment, so 3.0 does not claim that live connections fail over
+between proxies.
 
 Run with the host adapter disabled:
 
@@ -89,7 +93,8 @@ Assistant reported `Bluetooth Proxy ee608c (08:D1:F9:EE:60:8E)` as the hub's
 advertisement source at -48 dBm. The integration then returned successfully to
 the default phone-and-cloud mode.
 
-The host adapter was not disabled, and the one-hour cadence, proxy restart,
-Home Assistant restart in local mode, and two-proxy failover rows have not
-passed yet. Until those remaining rows pass, 3.0 must remain pre-release and
-must not claim the full proxy matrix is verified.
+The host adapter was not disabled, and the one-hour cadence, proxy restart, and
+Home Assistant restart in local mode have not passed yet. Those single-proxy
+rows remain release blockers. Two-proxy failover is explicitly untested because
+a second proxy is not available; it does not block 3.0 and must not be described
+as verified.

@@ -20,8 +20,8 @@ This project is not affiliated with, endorsed by, or supported by Weber.
 > 3.0 is under active development and has not been released yet. The native
 > code and automated Home Assistant 2026.7 tests are in place. Real-hardware
 > setup and direct local readings through one active ESPHome proxy are
-> verified. Recovery, endurance, and proxy-failover tests remain release
-> blockers.
+> verified. Single-proxy recovery and endurance tests remain release blockers.
+> Multi-proxy failover is not tested and is not claimed.
 
 ## Install
 
@@ -105,9 +105,9 @@ probe data over that proxy and then returned cleanly to the default cloud mode.
 For 3.0, Home Assistant 2026.7.2 import, config flow, identity generation,
 entity contracts, protocol frames, cloud normalization, and adapter re-selection
 are automated. Proxy discovery, pairing, and direct readings are verified on
-the equipment above. The remaining recovery, endurance, and failover cases in
-[Production readiness](PRODUCTION_READINESS.md) must pass with the host adapter
-disabled before 3.0 claims full proxy support.
+the equipment above. The remaining single-proxy recovery and endurance cases in
+[Production readiness](PRODUCTION_READINESS.md) must pass before release.
+Multi-proxy failover remains an explicitly unverified compatibility scenario.
 
 That is a test matrix, not a claim that every Weber model, firmware, account
 region, or proxy has been certified. Compatibility reports and pull requests
