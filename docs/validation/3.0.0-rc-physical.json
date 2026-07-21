@@ -1,0 +1,71 @@
+{
+  "candidate": "3.0.0-rc",
+  "evidence_date": "2026-07-20",
+  "identifiers": "redacted",
+  "environment": {
+    "home_assistant": "2026.7.2",
+    "host": "Home Assistant Yellow",
+    "hub": "Weber Connect Hub 2.0.3_7398",
+    "official_app": "Weber Android 2.10.0.2439 on Samsung SM-X210 / Android 16",
+    "bluetooth_path": "one active ESPHome proxy on ESPHome 2026.7.0"
+  },
+  "verified": {
+    "clean_install_private_companion": true,
+    "physical_confirmation_through_proxy": true,
+    "exact_cloud_association": true,
+    "simultaneous_official_app_and_home_assistant": true,
+    "four_stable_probe_entities": true,
+    "cloud_active_cook_endurance_minutes": 70,
+    "proxy_only_endurance_minutes": 61,
+    "proxy_reboot_recovery": true,
+    "proxy_first_session_cache_recovery": true,
+    "home_assistant_restart_without_repair": true,
+    "post_validation_host_reboot_recovery": true
+  },
+  "final_cloud_sample": {
+    "successful_updates": 9,
+    "failed_updates": 0,
+    "consecutive_failures": 0,
+    "probe_3_celsius": 23.3
+  },
+  "post_fix_proxy_only_sample": {
+    "advertisement_source_count": 1,
+    "advertisement_source": "ESPHome proxy",
+    "rssi_dbm": -50,
+    "successful_updates_start": 10,
+    "successful_updates_end": 17,
+    "failed_updates_start": 4,
+    "failed_updates_end": 4,
+    "last_error": null,
+    "probe_slot": 4,
+    "probe_celsius": 23.1
+  },
+  "post_restore_cloud_sample": {
+    "official_app_open": true,
+    "tablet_bluetooth_enabled": true,
+    "successful_updates": 6,
+    "failed_updates": 0,
+    "last_error": null,
+    "probe_slot": 4,
+    "probe_celsius": 23.1
+  },
+  "post_host_reboot_cloud_sample": {
+    "local_adapter_restored": true,
+    "proxy_active_scanning": true,
+    "proxy_slots_in_use": 0,
+    "proxy_slots_available": 3,
+    "successful_updates": 4,
+    "failed_updates": 0,
+    "consecutive_failures": 0,
+    "last_error": null,
+    "probe_slot": 4,
+    "probe_celsius": 22.3
+  },
+  "not_verified": [
+    "host-adapter-only physical matrix",
+    "two-proxy failover",
+    "real wall-clock bearer-token expiry",
+    "other hub models, firmware, regions, routers, and accounts",
+    "installation from a published v3.0.0 HACS archive"
+  ]
+}

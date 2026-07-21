@@ -1,0 +1,149 @@
+{
+  "title": "Weber Connect Unofficial",
+  "config": {
+    "progress": {
+      "preparing_companion": "**Preparing a private Weber connection.** Home Assistant is registering its new companion with Weber before Bluetooth pairing. This usually takes only a few seconds and ensures the hub can link it during approval.",
+      "approve_hub": "**Connecting to {name} through {path}.** A Bluetooth proxy may need up to 90 seconds to open the connection. When the hub asks, approve **Home Assistant** within 60 seconds. This screen advances automatically after approval.",
+      "finishing_setup": "**Checking Weber Cloud · {remaining} remaining.** The hub approved Home Assistant. Home Assistant is waiting for Weber to make the new connection available so the Weber app and Home Assistant can work at the same time. This screen updates automatically; no action is needed."
+    },
+    "step": {
+      "user": {
+        "title": "Choose your Weber hub",
+        "description": "Select the hub you want to add. The route shown beside it tells you which local Bluetooth adapter or active ESPHome proxy currently sees it.",
+        "data": {
+          "address": "Weber hub"
+        }
+      },
+      "no_devices": {
+        "title": "No Weber hub found",
+        "description": "Home Assistant cannot currently see a connectable Weber hub. Wake the hub, keep it near Home Assistant or an active ESPHome Bluetooth proxy, and search again.",
+        "menu_options": {
+          "search_again": "Search again"
+        }
+      },
+      "confirm": {
+        "title": "Connect {name}",
+        "description": "Initial setup requires working internet access and the hub to be online in Weber Cloud, even if you plan to use Home Assistant-only mode later. In the Weber app, first confirm the hub is online while the phone or tablet's Bluetooth is off. Then fully close the Weber app, leave Bluetooth off on every phone or tablet that uses it, and wake {name}. Home Assistant will connect through **{path}**; a Bluetooth proxy may need up to 90 seconds. When the hub asks, approve **Home Assistant** within 60 seconds. The final Weber Cloud check can take up to five minutes."
+      },
+      "pairing_failed": {
+        "title": "Pairing did not finish",
+        "description": "**What happened:** {reason}\n\nNo Home Assistant integration entry was saved. Keep the Weber app closed and phone or tablet Bluetooth off, wake the hub, then try pairing again with the same prepared private connection.",
+        "menu_options": {
+          "retry_pairing": "Try pairing again",
+          "choose_hub": "Choose another hub"
+        }
+      },
+      "cloud_preparation_failed": {
+        "title": "The private Weber connection could not be prepared",
+        "description": "Home Assistant stopped before contacting the hub, so no approval is needed yet. Confirm Home Assistant can reach the internet, then try again. The same private identity will be reused.",
+        "menu_options": {
+          "retry_preparation": "Try preparing the connection again",
+          "start_over": "Start over"
+        }
+      },
+      "cloud_not_linked": {
+        "title": "The hub is paired, but Weber Cloud has not linked it",
+        "description": "Local pairing succeeded. Home Assistant reached Weber Cloud and checked automatically for up to five minutes, but the new connection was not given access to this hub. You do not need to approve the hub again. Turn off phone or tablet Bluetooth and confirm the hub is online in the Weber app; if it is offline there too, restore the hub's Wi-Fi before checking again.",
+        "menu_options": {
+          "retry_cloud": "Check Weber Cloud again — up to 5 minutes",
+          "start_over": "Start over"
+        }
+      },
+      "cloud_unavailable": {
+        "title": "Weber Cloud could not be reached",
+        "description": "Local pairing succeeded, but Home Assistant could not complete the online check. The hub does not need approval again. Confirm Home Assistant has internet access. With phone or tablet Bluetooth off, also confirm the hub is online in the Weber app; if it is offline there too, restore the hub's Wi-Fi. Then try again.",
+        "menu_options": {
+          "retry_cloud": "Try the online check again — up to 5 minutes",
+          "start_over": "Start over"
+        }
+      },
+      "setup_failed": {
+        "title": "Setup did not finish",
+        "description": "Home Assistant encountered an unexpected problem and did not create the integration entry. Check the Home Assistant logs for the exact cause before starting over.",
+        "menu_options": {
+          "start_over": "Start over"
+        }
+      }
+    },
+    "create_entry": {
+      "default": "**Both setup steps are complete.** Turn Bluetooth back on and reopen the Weber app. The phone may use the hub's Bluetooth connection while Home Assistant continues receiving cook data online."
+    },
+    "abort": {
+      "already_configured": "This Weber hub is already configured.",
+      "already_in_progress": "Setup is already open for this Weber hub. Close this window and continue the existing setup."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Weber Connect settings",
+        "description": "The recommended defaults let the Weber app and Home Assistant work together.",
+        "sections": {
+          "connection": {
+            "name": "Connection",
+            "description": "Phone + Home Assistant leaves Bluetooth available to the Weber app and receives temperatures online. Home Assistant only keeps the hub's Bluetooth connection through a local adapter or active proxy, so the app cannot use Bluetooth at the same time. Changing modes closes the current connection before starting the other one.",
+            "data": {
+              "connection_mode": "Use with"
+            }
+          },
+          "probes": {
+            "name": "Probe names",
+            "description": "Optional nicknames appear beside the permanent probe number.",
+            "data": {
+              "probe_name_1": "Probe 1 nickname",
+              "probe_name_2": "Probe 2 nickname",
+              "probe_name_3": "Probe 3 nickname",
+              "probe_name_4": "Probe 4 nickname"
+            }
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "connection_mode": {
+      "options": {
+        "phone_and_home_assistant": "Phone + Home Assistant — Recommended",
+        "home_assistant_only": "Home Assistant only"
+      }
+    }
+  },
+  "issues": {
+    "connection_lost": {
+      "title": "{name} lost its online connection",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Retry {name}",
+            "description": "Home Assistant has stopped receiving new Weber Cloud data. First turn Bluetooth off on the phone or tablet and confirm the hub appears online in the Weber app; this verifies the hub's Wi-Fi. Then confirm Home Assistant has internet access and continue to retry now."
+          }
+        },
+        "error": {
+          "still_unavailable": "No new data arrived. Check the hub's Wi-Fi in the Weber app with phone Bluetooth off, confirm Home Assistant can reach the internet, and try again.",
+          "entry_not_loaded": "The integration is not loaded. Reload it from its integration page, then return to this repair."
+        }
+      }
+    },
+    "credentials_rejected": {
+      "title": "{name} needs to be paired again",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Pair {name} again",
+            "description": "Weber rejected Home Assistant's generated companion credential. This is different from a temporary internet or hub Wi-Fi outage. Continue to remove this integration entry, then add **Weber Connect Unofficial** again and approve the new Home Assistant companion on the hub. Your Weber email and password are never required."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "probe_temperature": {
+        "name": "Probe {number}"
+      },
+      "probe_temperature_named": {
+        "name": "{nickname} · Probe {number}"
+      }
+    }
+  }
+}
