@@ -48,6 +48,7 @@ jobs:
         run: >-
           pytest -q --asyncio-mode=auto tests_native
           --cov=custom_components/weber_connect
+          --cov-branch
           --cov-report=term-missing
           --cov-fail-under=95
       - name: Validate release contract

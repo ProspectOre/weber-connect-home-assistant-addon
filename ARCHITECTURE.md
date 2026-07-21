@@ -27,7 +27,7 @@ general-purpose remote GATT service.
 1. Home Assistant Bluetooth discovery matches Weber manufacturer identifiers or
    the Weber local name through any connectable scanner.
 2. The config flow generates an independent 16-byte companion ID, cloud device
-   password, and transient pairing key material.
+   password, and transient 64-byte pairing value required by the hub protocol.
 3. Home Assistant registers that private companion with Weber Cloud before it
    presents the companion ID to the hub. This ordering lets the hub publish the
    cloud association during the one-time Bluetooth approval session.
@@ -40,9 +40,14 @@ general-purpose remote GATT service.
 7. The integration waits for Weber's association list to contain the exact hub;
    it never treats local approval alone as proof of cloud access.
 8. Home Assistant stores the companion ID, cloud device password, appliance ID,
-   hub address, and negotiated message version. Transient pairing keys are
+   hub address, and negotiated message version. The transient pairing value is
    discarded.
 9. Normal updates use Weber Cloud by default so the app retains Bluetooth.
+
+Registration necessarily precedes physical approval. If the flow is abandoned
+after step 3, Weber may retain an unused companion record because its private
+API exposes no supported revocation operation. No config entry is created and
+Home Assistant retains no credential after the flow is discarded.
 
 ## Update policy
 
@@ -82,3 +87,12 @@ implement the minimal read-only companion REST/WebSocket surface for
 association and probe telemetry. Cook-history, recipe, instruction, timer, and
 control APIs are outside the 3.0 runtime. These interfaces are private and can
 change without notice.
+
+The local decoder accepts only a complete transport frame whose declared
+length, envelope CRC, and terminal marker all verify. The cloud decoder accepts
+status only when the routing source is the configured appliance and the target
+is the generated companion. Pairing-response public-key bytes and the envelope's
+reserved verification byte are decoded only to validate the observed wire
+shape; they are never persisted or used as credentials. The obsolete manual
+cloud-association endpoint and unused generated private-key field are absent
+from the runtime.

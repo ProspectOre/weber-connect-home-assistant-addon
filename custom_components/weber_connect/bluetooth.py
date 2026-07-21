@@ -77,7 +77,11 @@ class WeberBluetoothSession:
         return value
 
     def _handle_status(self, _sender: Any, data: bytearray) -> None:
-        _type_value, parsed, _code = _payload(bytes(data))
+        try:
+            _type_value, parsed = _payload(bytes(data))
+        except WeberBluetoothError:
+            _LOGGER.warning("Ignored an invalid Weber Bluetooth status frame")
+            return
         if isinstance(parsed, dict) and parsed.get("kind") == "cook_session_status":
             self._latest = parsed
             self._received.set()
@@ -248,7 +252,6 @@ def generate_identity() -> CompanionIdentity:
 
     return CompanionIdentity(
         companion_id=secrets.token_hex(16),
-        private_key=secrets.token_hex(64),
         public_key=secrets.token_hex(64),
     )
 
@@ -257,14 +260,30 @@ def _decoded(data: bytes) -> dict[str, Any]:
     return decode_hex_frame(data.hex(":"))
 
 
-def _payload(data: bytes) -> tuple[int | None, dict[str, Any] | None, int | None]:
+def _payload(data: bytes) -> tuple[int | None, dict[str, Any] | None]:
+    """Return a verified plaintext appliance payload.
+
+    The hub wraps every local message in both a transport frame and a Saber
+    envelope. Never parse a plausible body out of a truncated, corrupted, or
+    concatenated frame.
+    """
+
     decoded = _decoded(data)
+    if decoded.get("length_ok") is not True or decoded.get("extra_hex"):
+        raise WeberBluetoothError("The hub returned an invalid transport frame.")
     envelope = decoded.get("envelope") or {}
-    candidate = envelope.get("body_plain_candidate") or {}
+    if (
+        envelope.get("crc_ok") is not True
+        or envelope.get("tail_byte") != 0x54
+        or envelope.get("extra_hex")
+    ):
+        raise WeberBluetoothError("The hub returned a corrupted protocol envelope.")
+    candidate = envelope.get("body_plain_candidate")
+    if not isinstance(candidate, dict):
+        raise WeberBluetoothError("The hub returned an unsupported encrypted response.")
     return (
         candidate.get("type_value"),
         candidate.get("parsed_payload"),
-        envelope.get("verification_code"),
     )
 
 
@@ -423,7 +442,7 @@ async def async_pair(
             reply = await poll_response(10.0)
             if reply is None:
                 continue
-            type_value, parsed, _code = _payload(reply)
+            type_value, parsed = _payload(reply)
             if type_value in {0xF1, 0xF2}:
                 break
             if (
@@ -447,15 +466,13 @@ async def async_pair(
 
         deadline = asyncio.get_running_loop().time() + confirmation_timeout
         pairing_payload: dict[str, Any] | None = None
-        verification_code: int | None = None
         while asyncio.get_running_loop().time() < deadline:
             reply = await poll_response(min(2.0, deadline - asyncio.get_running_loop().time()))
             if reply is None:
                 continue
-            _type_value, parsed, code = _payload(reply)
+            _type_value, parsed = _payload(reply)
             if isinstance(parsed, dict) and parsed.get("kind") == "pairing_response":
                 pairing_payload = parsed
-                verification_code = code if isinstance(code, int) and code > 0 else None
                 break
         if pairing_payload is None:
             raise WeberBluetoothError(
@@ -466,7 +483,6 @@ async def async_pair(
                 f"The hub returned {pairing_payload.get('status', 'an unknown result')} for pairing."
             )
         appliance_id = str(pairing_payload.get("appliance_id") or "").replace(":", "")
-        appliance_public_key = str(pairing_payload.get("appliance_public_key") or "")
         if len(appliance_id) != 32:
             raise WeberBluetoothError("The hub returned an invalid appliance identity.")
 
@@ -481,8 +497,6 @@ async def async_pair(
         return PairingResult(
             message_version=version,
             appliance_id=appliance_id,
-            appliance_public_key=appliance_public_key,
-            verification_code=verification_code,
         )
     except BleakCharacteristicNotFoundError as exc:
         raise WeberBluetoothError(

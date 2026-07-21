@@ -75,3 +75,39 @@ async def test_connection_repair_handles_removed_entry_and_invalid_data(hass: ob
 
     with pytest.raises(ValueError, match="missing its config entry"):
         await async_create_fix_flow(hass, "connection_lost_invalid", None)
+
+
+@pytest.mark.asyncio
+async def test_connection_repair_explains_unloaded_entry(hass: object) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id="unloaded-hub")
+    entry.add_to_hass(hass)
+    flow = await async_create_fix_flow(
+        hass,
+        f"connection_lost_{entry.entry_id}",
+        {"entry_id": entry.entry_id},
+    )
+    flow.hass = hass
+
+    result = await flow.async_step_confirm({})
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "entry_not_loaded"}
+
+
+@pytest.mark.asyncio
+async def test_credential_repair_removes_rejected_entry(hass: object) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id="rejected-hub")
+    entry.add_to_hass(hass)
+    flow = await async_create_fix_flow(
+        hass,
+        f"credentials_rejected_{entry.entry_id}",
+        {"entry_id": entry.entry_id},
+    )
+    flow.hass = hass
+
+    result = await flow.async_step_init()
+    assert result["type"] is FlowResultType.FORM
+
+    result = await flow.async_step_confirm({})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert hass.config_entries.async_get_entry(entry.entry_id) is None

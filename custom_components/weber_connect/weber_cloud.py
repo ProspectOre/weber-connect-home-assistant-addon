@@ -22,7 +22,6 @@ APP_CLIENT_ID = "qyw4CGeb/i93BrA0KAUuGtPyKImr+nUKc8lHxFdt"
 APP_CLIENT_SECRET = "ekEHLyHw+Ru3H25mH4a9f2OKCMILnMx+YSN2dFIB2zB0PP8NGAnSPTw"  # nosec B105
 
 HEX_ID_RE = re.compile(r"^[0-9a-f]{32}$")
-VERIFICATION_CODE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class WeberCloudError(RuntimeError):
@@ -124,10 +123,7 @@ class WeberCloudClient:
                     body = gzip.decompress(body)
                 return body
         except urllib.error.HTTPError as exc:
-            detail = exc.read(512).decode("utf-8", "replace").strip()
             message = f"Weber cloud returned HTTP {exc.code}"
-            if detail:
-                message += f": {detail}"
             if exc.code in {401, 403}:
                 if exc.code == 401:
                     self._token = None
@@ -212,26 +208,21 @@ class WeberCloudClient:
         return self._token
 
     def token(self) -> str:
-        if self._token is None or time.time() >= self._token_expiry - 60:
+        token = self._token
+        if token is None or time.time() >= self._token_expiry - 60:
             return self.authenticate()
-        return self._token
+        return token
+
+    def token_needs_refresh(self) -> bool:
+        """Return whether a new bearer token is required before more I/O."""
+
+        return self._token is None or time.time() >= self._token_expiry - 60
 
     def associated_appliances(self) -> list[dict[str, Any]]:
         payload = self._request_json("GET", f"/2/devices/{self.config.device_id}/associated")
         devices = payload.get("devices", [])
         return (
             [row for row in devices if isinstance(row, dict)] if isinstance(devices, list) else []
-        )
-
-    def associate(self, verification_code: str) -> dict[str, Any]:
-        code = verification_code.strip()
-        if not VERIFICATION_CODE_RE.fullmatch(code):
-            raise ValueError("Verification code contains unsupported characters.")
-        quoted = urllib.parse.quote(code, safe="")
-        return self._request_json(
-            "POST",
-            f"/2/devices/pairing/{quoted}/companion",
-            body={},
         )
 
     def wake_messaging(self, appliance_id: str) -> None:

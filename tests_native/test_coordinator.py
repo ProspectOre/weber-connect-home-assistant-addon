@@ -36,6 +36,7 @@ class FakeTransport:
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.received_types = [0x80]
+        self.error_kind = "connection"
 
     async def async_run(self, status_callback: object, error_callback: object) -> None:
         self.status_callback = status_callback
@@ -162,6 +163,29 @@ def test_cloud_outage_creates_one_repair_and_recovery_clears_it(hass: object) ->
     assert ir.async_get(hass).async_get_issue("weber_connect", issue_id) is not None
     coordinator._async_status({"probes": []})
     assert ir.async_get(hass).async_get_issue("weber_connect", issue_id) is None
+
+
+def test_rejected_cloud_credential_creates_distinct_immediate_repair(hass: object) -> None:
+    coordinator, transport = _coordinator(hass, cloud=True)
+    transport.error_kind = "credentials"
+
+    coordinator._async_error("credential rejected")
+
+    registry = ir.async_get(hass)
+    credential_issue = f"credentials_rejected_{coordinator.entry.entry_id}"
+    connection_issue = f"connection_lost_{coordinator.entry.entry_id}"
+    assert registry.async_get_issue("weber_connect", credential_issue) is not None
+    assert registry.async_get_issue("weber_connect", connection_issue) is None
+
+    transport.error_kind = "connection"
+    for _ in range(coordinator_module.REPAIR_FAILURE_THRESHOLD):
+        coordinator._async_error("network unavailable")
+    assert registry.async_get_issue("weber_connect", credential_issue) is not None
+    assert registry.async_get_issue("weber_connect", connection_issue) is None
+
+    transport.error_kind = "connection"
+    coordinator._async_status({"probes": []})
+    assert registry.async_get_issue("weber_connect", credential_issue) is None
 
 
 def test_bluetooth_advertisement_wakes_existing_session_only(hass: object) -> None:

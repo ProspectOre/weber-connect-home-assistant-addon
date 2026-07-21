@@ -84,10 +84,6 @@ class FakeCloudClient:
             return []
         return [{"appliance_id": self.associated_appliance_id}]
 
-    def associate(self, verification_code: str) -> dict[str, object]:
-        self.association_codes.append(verification_code)
-        return {"associated": True}
-
 
 class EventuallyAssociatedCloudClient(FakeCloudClient):
     """Cloud double that models Weber's delayed association propagation."""
@@ -111,14 +107,11 @@ async def test_user_flow_creates_private_companion_entry(hass: object) -> None:
     )
     identity = CompanionIdentity(
         companion_id="11" * 16,
-        private_key="22" * 64,
         public_key="33" * 64,
     )
     pairing = PairingResult(
         message_version=10,
         appliance_id="44" * 16,
-        appliance_public_key="55" * 64,
-        verification_code=123456,
     )
     pairing_started = asyncio.Event()
     allow_pairing = asyncio.Event()
@@ -210,14 +203,11 @@ async def test_user_flow_waits_for_delayed_cloud_association() -> None:
 
     identity = CompanionIdentity(
         companion_id="11" * 16,
-        private_key="22" * 64,
         public_key="33" * 64,
     )
     pairing = PairingResult(
         message_version=10,
         appliance_id="44" * 16,
-        appliance_public_key="55" * 64,
-        verification_code=None,
     )
     EventuallyAssociatedCloudClient.appliance_id = pairing.appliance_id
     EventuallyAssociatedCloudClient.checks = 0
@@ -265,14 +255,11 @@ async def test_pairing_timeout_has_clear_retry_without_new_identity(hass: object
     )
     identity = CompanionIdentity(
         companion_id="11" * 16,
-        private_key="22" * 64,
         public_key="33" * 64,
     )
     pairing = PairingResult(
         message_version=10,
         appliance_id="44" * 16,
-        appliance_public_key="55" * 64,
-        verification_code=123456,
     )
     pairing_started = asyncio.Event()
     finish_first_attempt = asyncio.Event()

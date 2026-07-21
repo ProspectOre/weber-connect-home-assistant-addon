@@ -26,7 +26,7 @@ ruff check custom_components tests_native scripts
 ruff format --check custom_components tests_native scripts
 mypy --python-version 3.14 --strict --ignore-missing-imports custom_components/weber_connect
 bandit -q -r custom_components/weber_connect scripts
-pytest -q --asyncio-mode=auto tests_native --cov=custom_components/weber_connect --cov-report=term-missing --cov-fail-under=80
+pytest -q --asyncio-mode=auto tests_native --cov=custom_components/weber_connect --cov-branch --cov-report=term-missing --cov-fail-under=95
 python scripts/validate_release.py
 pip-audit --requirement requirements-runtime.txt --no-deps --disable-pip
 ```
@@ -45,9 +45,8 @@ Hassfest and HACS validation run in GitHub Actions.
 - Never request the user's Weber email/password or extract phone secrets.
 - Cloud authentication alone is insufficient; associate and scope access to
   the paired appliance.
-- Remote commands must remain opt-in, narrowly allowlisted, range-validated,
-  and covered by protocol tests. Wi-Fi configuration, ignition, recipe
-  installation/start, target changes, and grill-mode control are out of scope.
+- Remote commands, Wi-Fi configuration, ignition, recipe installation/start,
+  target changes, and grill-mode control are out of scope for 3.0.
 - Stable unique IDs must not depend on which adapter or proxy is selected.
 
 ## Compatibility reports

@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 import json
 import py_compile
+import re
 import sys
 from pathlib import Path
 
@@ -38,6 +39,8 @@ def check_required_files() -> None:
         "CONTRIBUTING.md",
         "LICENSE",
         "PRODUCTION_READINESS.md",
+        "docs/validation/3.0.0-rc-automated.json",
+        "docs/validation/3.0.0-rc-physical.json",
         "SECURITY.md",
         "hacs.json",
         "requirements-runtime.txt",
@@ -104,9 +107,24 @@ def check_translations() -> None:
     for section in ("config", "options", "entity"):
         if not isinstance(translations.get(section), dict):
             fail(f"English translations are missing {section}")
-    text = json.dumps(translations)
+    issues = translations.get("issues")
+    if not isinstance(issues, dict):
+        fail("English translations are missing issues")
+    for issue_key, issue in issues.items():
+        if not isinstance(issue, dict):
+            fail(f"issue translation {issue_key} must be an object")
+        unsupported = set(issue) - {"title", "fix_flow"}
+        if unsupported:
+            fail(
+                f"issue translation {issue_key} contains unsupported top-level keys: "
+                f"{', '.join(sorted(unsupported))}"
+            )
+        if not isinstance(issue.get("title"), str) or not isinstance(issue.get("fix_flow"), dict):
+            fail(f"issue translation {issue_key} must define title and fix_flow")
+    text = json.dumps(translations).lower()
     for phrase in (
-        "Fully close the Weber app",
+        "fully close the weber app",
+        "initial setup requires working internet access",
         "active proxy",
         "phone_and_home_assistant",
     ):
@@ -143,6 +161,13 @@ def check_privacy_and_scope() -> None:
         fail("Bluetooth retries must re-resolve the best adapter or proxy")
     if "async_ble_device_from_address" in (INTEGRATION / "weber_cloud.py").read_text():
         fail("cloud code must not own Bluetooth adapter selection")
+    models = (INTEGRATION / "models.py").read_text(encoding="utf-8")
+    for removed in ("private_key", "appliance_public_key", "verification_code"):
+        if removed in models:
+            fail(f"unused pairing field must not remain in runtime models: {removed}")
+    cloud_client = (INTEGRATION / "weber_cloud.py").read_text(encoding="utf-8")
+    if "def associate(" in cloud_client:
+        fail("obsolete manual cloud-association endpoint must not ship")
     platforms = ast.literal_eval(
         next(
             line.split("=", 1)[1].strip()
@@ -152,6 +177,19 @@ def check_privacy_and_scope() -> None:
     )
     if platforms != ("sensor",):
         fail("3.0 must expose only the four probe temperature sensors")
+    evidence = load_json(ROOT / "docs" / "validation" / "3.0.0-rc-physical.json")
+    evidence_text = json.dumps(evidence)
+    if evidence.get("identifiers") != "redacted":
+        fail("physical validation evidence must declare identifiers redacted")
+    if re.search(r"\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b", evidence_text):
+        fail("physical validation evidence must not contain MAC addresses")
+    automated = load_json(ROOT / "docs" / "validation" / "3.0.0-rc-automated.json")
+    tests = automated.get("tests")
+    if (
+        not isinstance(tests, dict)
+        or float(tests.get("combined_statement_branch_coverage_percent", 0)) < 95
+    ):
+        fail("automated validation evidence must record at least 95% combined coverage")
 
 
 def check_workflows() -> None:
@@ -161,6 +199,8 @@ def check_workflows() -> None:
             fail(f"CI is missing release gate: {required}")
     if "--cov-fail-under=95" not in ci:
         fail("CI must enforce at least 95% native integration coverage")
+    if "--cov-branch" not in ci:
+        fail("CI must include branch coverage in the 95% release floor")
     if (ROOT / ".github" / "workflows" / "publish.yml").exists():
         fail("3.0 must not retain the add-on container publishing workflow")
 

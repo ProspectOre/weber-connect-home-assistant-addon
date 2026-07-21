@@ -13,8 +13,10 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from websockets.asyncio.client import ClientConnection, connect
+from websockets.exceptions import InvalidStatus
 
 from .saber_frames import parse_cook_session_status_payload
+from .weber_cloud import WeberCloudAuthError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +34,10 @@ ErrorCallback = Callable[[str], None]
 
 class WeberCloudSocketError(RuntimeError):
     """The companion WebSocket rejected or returned an invalid message."""
+
+
+class WeberCloudCredentialError(WeberCloudSocketError):
+    """The generated companion credential is no longer accepted."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +127,7 @@ class WeberCloudSession:
         self._closed = False
         self._wake = asyncio.Event()
         self.received_types: list[int] = []
+        self.error_kind = "connection"
 
     def _next_sequence(self) -> int:
         value = self._sequence
@@ -131,28 +138,45 @@ class WeberCloudSession:
         connection = self._connection
         if connection is not None:
             return connection
-        token = await self.hass.async_add_executor_job(self.cloud_client.token)
+        try:
+            token = await self.hass.async_add_executor_job(self.cloud_client.token)
+        except WeberCloudAuthError as exc:
+            raise WeberCloudCredentialError(
+                "Weber rejected Home Assistant's private companion credential."
+            ) from exc
         try:
             await self.hass.async_add_executor_job(
                 self.cloud_client.wake_messaging,
                 self.appliance_id,
             )
+        except WeberCloudAuthError as exc:
+            raise WeberCloudCredentialError(
+                "Weber rejected Home Assistant's private companion credential."
+            ) from exc
         except Exception:
             LOGGER.debug("Cloud messaging wake-up failed", exc_info=True)
         ssl_context = await self.hass.async_add_executor_job(ssl.create_default_context)
-        self._connection = await connect(
-            f"wss://{self.cloud_client.messaging_host}{SOCKET_PATH}",
-            additional_headers={"Authorization": f"Bearer {token}"},
-            user_agent_header=self.cloud_client.user_agent,
-            open_timeout=self.timeout,
-            ping_interval=40,
-            ping_timeout=20,
-            close_timeout=3,
-            compression=None,
-            max_size=1024 * 1024,
-            proxy=None,
-            ssl=ssl_context,
-        )
+        try:
+            self._connection = await connect(
+                f"wss://{self.cloud_client.messaging_host}{SOCKET_PATH}",
+                additional_headers={"Authorization": f"Bearer {token}"},
+                user_agent_header=self.cloud_client.user_agent,
+                open_timeout=self.timeout,
+                ping_interval=40,
+                ping_timeout=20,
+                close_timeout=3,
+                compression=None,
+                max_size=1024 * 1024,
+                proxy=None,
+                ssl=ssl_context,
+            )
+        except InvalidStatus as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in {401, 403}:
+                raise WeberCloudCredentialError(
+                    "Weber rejected Home Assistant's private companion credential."
+                ) from exc
+            raise
         self._subscribed = False
         return self._connection
 
@@ -210,6 +234,13 @@ class WeberCloudSession:
                 if not isinstance(raw, bytes):
                     continue
                 message = decode_routed_message(raw)
+                if (
+                    message.source_id != self.appliance_id.lower()
+                    or message.target_id != self.cloud_client.config.device_id.lower()
+                ):
+                    raise WeberCloudSocketError(
+                        "Cloud socket message was routed to or from an unexpected device."
+                    )
                 self.received_types = [*self.received_types[-19:], message.type_value]
                 if message.type_value == 0x87:
                     raise WeberCloudSocketError("The hub rejected the cloud request.")
@@ -219,6 +250,13 @@ class WeberCloudSession:
     async def async_request_status(self) -> dict[str, Any]:
         """Request one current status without rebuilding the socket."""
 
+        if self._connection is not None and await self.hass.async_add_executor_job(
+            self.cloud_client.token_needs_refresh
+        ):
+            # Weber bearer tokens expire after roughly 5.8 hours. Rotate the
+            # socket before sending again so a long-lived session never relies
+            # on an expired upgrade credential.
+            await self._async_close_connection()
         if not self._subscribed:
             await self._async_subscribe()
         else:
@@ -252,10 +290,16 @@ class WeberCloudSession:
                     raise
                 except Exception as exc:
                     await self._async_close_connection()
+                    self.error_kind = (
+                        "credentials"
+                        if isinstance(exc, WeberCloudCredentialError)
+                        else "connection"
+                    )
                     error_callback(f"Weber Cloud connection failed: {exc}")
                     delay = RECONNECT_DELAYS[min(delay_index, len(RECONNECT_DELAYS) - 1)]
                     delay_index += 1
                 else:
+                    self.error_kind = "connection"
                     status_callback(status)
                     delay_index = 0
                     delay = max(

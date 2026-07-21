@@ -39,16 +39,31 @@ This project is not affiliated with, endorsed by, or supported by Weber.
 3. Download **Weber Connect Unofficial** and restart Home Assistant.
 4. Open **Settings → Devices & services**. Select the discovered Weber hub, or
    choose **Add integration → Weber Connect Unofficial**.
-5. Fully close the Weber app on every phone or tablet that uses it, then
-   temporarily turn off Bluetooth on those devices. This prevents a phone from
-   reclaiming the hub while Home Assistant pairs.
-6. Wake the hub, continue setup, and approve Home Assistant on the hub display.
-7. Home Assistant checks Weber Cloud for up to five minutes. After setup
+5. Before closing the Weber app, turn off Bluetooth on that phone or tablet and
+   confirm the hub still appears online through Wi-Fi. Leave Bluetooth off.
+   Initial setup always needs Home Assistant internet access and a working
+   hub-to-Weber Cloud connection, including when you intend to select **Home
+   Assistant only** after setup.
+6. Fully close the Weber app on every phone or tablet that uses it, and turn off
+   Bluetooth on any other one. This prevents a phone from reclaiming the hub
+   while Home Assistant pairs.
+7. Wake the hub, continue setup, and approve Home Assistant on the hub display.
+8. Home Assistant checks Weber Cloud for up to five minutes. After setup
    completes, turn Bluetooth back on and reopen the Weber app.
 
 The intended setup creates and stores a private Home Assistant companion
 without asking for a Weber account password. The documented clean-install path
 has been validated end to end on the equipment below.
+
+### Replacing the 2.1 add-on
+
+3.0 is a clean native integration, not an in-place add-on upgrade. In the 2.1
+panel, use **Forget This Hub**, then stop and uninstall the add-on before
+installing 3.0. The native integration creates a new device and four native
+sensor entities; it does not import the add-on's MQTT entities or settings. If
+an old unavailable MQTT device remains, remove its retained discovery records
+from the broker and delete that MQTT device from Home Assistant. The add-on and
+its MQTT broker are not needed by 3.0.
 
 ## Everyday behavior
 
@@ -86,7 +101,9 @@ cavities, timers, and technical connection-status entities are not exposed.
 - HACS for installation until the integration is accepted into Home Assistant.
 - A connectable Home Assistant Bluetooth adapter or active ESPHome Bluetooth
   proxy in range during setup.
-- Internet access for the default **Phone + Home Assistant** mode.
+- Home Assistant internet access and a hub that is already online in Weber
+  Cloud for every initial installation. **Home Assistant only** avoids cloud
+  traffic after setup, not during setup.
 
 For an ESPHome proxy, `bluetooth_proxy.active` must be enabled and a connection
 slot must be available. No proxy address or encryption key is entered into this
@@ -102,8 +119,13 @@ clean-install cloud association for a newly generated companion, matching phone
 and Home Assistant temperatures, proxy discovery, direct proxy reads, and
 recovery after a deliberate proxy reboot.
 
-The current greenfield transport implementation has 104 automated tests and
-95.90% combined statement/branch coverage. Import, config flow, transient
+The final 3.0 physical setup and endurance tests used the ESPHome proxy path.
+A host-adapter-only pairing and endurance run has not been completed, so direct
+adapter compatibility is implemented through Home Assistant's standard
+Bluetooth manager but is not claimed as physically verified for this release.
+
+The current greenfield transport implementation is held to at least 95%
+combined statement/branch coverage. Import, config flow, transient
 identity generation, entity contracts, protocol frames, persistent-session
 reuse, reconnect behavior, proxy service-cache recovery, diagnostics redaction,
 and transport ownership are covered. Live smoke and config-entry reload tests
@@ -112,7 +134,9 @@ The final persistent cloud test ran for more than 70 minutes with the Weber app
 open and an active cook. The proxy-only test ran for more than one hour and was
 followed by a successful Home Assistant restart without re-pairing. See
 [Production readiness](PRODUCTION_READINESS.md) for the measurements and
-remaining unverified scenarios. Multi-proxy failover is explicitly unverified.
+remaining unverified scenarios. The corresponding
+[redacted machine-readable evidence](docs/validation/3.0.0-rc-physical.json)
+contains no device identifiers. Multi-proxy failover is explicitly unverified.
 
 That is a test matrix, not a claim that every Weber model, firmware, account
 region, or proxy has been certified. Compatibility reports and pull requests
@@ -121,16 +145,22 @@ are welcome; see [Contributing](CONTRIBUTING.md) for the safe details to include
 ## Privacy
 
 The integration generates a random companion ID, cloud device password, and
-transient pairing key material. Only the approved companion identity and cloud
-credential are stored in the config entry; the pairing keys are discarded.
+transient pairing value. Only the approved companion identity and cloud
+credential are stored in the config entry; the pairing value is discarded.
 Diagnostics redact stored credentials and all hub/companion identifiers. The
 integration never asks for the user's Weber account password and does not copy
 secrets from the official app.
 
 Weber Cloud is private and undocumented. The default mode sends Home
-Assistant's generated identity and cook-session requests to Weber. **Home
-Assistant only** mode avoids those requests but cannot share the hub's single
-Bluetooth connection with the phone.
+Assistant's generated identity and read-only current-status requests to Weber.
+**Home Assistant only** mode avoids those requests but cannot share the hub's
+single Bluetooth connection with the phone.
+
+Registering the private companion happens before physical approval. If setup is
+abandoned after registration, Weber may retain an unused server-side companion
+record; it contains no Weber account password, and Weber provides no supported
+revocation endpoint. Removing the Home Assistant entry always deletes the local
+credential.
 
 ## Project documents
 

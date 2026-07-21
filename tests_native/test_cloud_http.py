@@ -113,17 +113,6 @@ def test_associated_appliances_filters_rows_and_authorizes_request() -> None:
             client.associated_appliances()
 
 
-def test_associate_validates_and_quotes_verification_code() -> None:
-    client = WeberCloudClient(CloudConfig(DEVICE_ID, "password"))
-    client._token = "token"
-    client._token_expiry = time.time() + 3600
-    with patch.object(client, "_open", return_value=b'{"associated": true}') as open_request:
-        assert client.associate("ABC_123") == {"associated": True}
-    assert open_request.call_args.args[0].full_url.endswith("/ABC_123/companion")
-    with pytest.raises(ValueError, match="unsupported"):
-        client.associate("not allowed!")
-
-
 def test_wake_messaging_uses_https_and_bearer_token() -> None:
     client = WeberCloudClient(CloudConfig(DEVICE_ID, "password"))
     client._token = "token"
@@ -185,8 +174,9 @@ def test_open_normalizes_http_auth_server_and_network_errors() -> None:
             "custom_components.weber_connect.weber_cloud.urllib.request.urlopen",
             side_effect=error,
         ):
-            with pytest.raises(error_type, match=str(code)):
+            with pytest.raises(error_type, match=str(code)) as raised:
                 client._open(urllib.request.Request("https://example.com"))
+            assert "detail" not in str(raised.value)
     assert client._token is None
 
     with patch(

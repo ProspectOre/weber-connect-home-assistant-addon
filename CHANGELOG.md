@@ -26,6 +26,10 @@
   Assistant mode, with no automatic cross-transport fallback.
 - Added actionable cloud-connection repairs, last-success tracking,
   privacy-minimized diagnostics, and a fixed start-to-start 10-second cadence.
+- Added a distinct rejected-credential recovery flow and separated Home
+  Assistant internet, Weber service, and hub Wi-Fi troubleshooting.
+- Enforced Bluetooth transport length, CRC, and terminal-marker integrity and
+  exact source/target routing for cloud status frames.
 - Removed cook-history, recipe, instruction, timer, cavity, control, legacy
   migration, user polling, and fallback paths from the 3.0 runtime.
 - Added privacy-safe diagnostics, HACS validation, Hassfest, strict typing,

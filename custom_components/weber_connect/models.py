@@ -11,7 +11,6 @@ class CompanionIdentity:
     """Private identity paired with a Weber hub."""
 
     companion_id: str
-    private_key: str
     public_key: str
 
 
@@ -21,8 +20,6 @@ class PairingResult:
 
     message_version: int
     appliance_id: str
-    appliance_public_key: str
-    verification_code: int | None
 
 
 @dataclass(slots=True)

@@ -23,11 +23,11 @@
       },
       "confirm": {
         "title": "Connect {name}",
-        "description": "Fully close the Weber app and temporarily turn off Bluetooth on every phone or tablet that uses it. Wake {name}, then continue. Home Assistant will connect through **{path}**; a Bluetooth proxy may need up to 90 seconds. When the hub asks, approve **Home Assistant** within 60 seconds. Home Assistant will then check Weber Cloud for up to five minutes."
+        "description": "Initial setup requires working internet access and the hub to be online in Weber Cloud, even if you plan to use Home Assistant-only mode later. In the Weber app, first confirm the hub is online while the phone or tablet's Bluetooth is off. Then fully close the Weber app, leave Bluetooth off on every phone or tablet that uses it, and wake {name}. Home Assistant will connect through **{path}**; a Bluetooth proxy may need up to 90 seconds. When the hub asks, approve **Home Assistant** within 60 seconds. The final Weber Cloud check can take up to five minutes."
       },
       "pairing_failed": {
         "title": "Pairing did not finish",
-        "description": "**What happened:** {reason}\n\nNothing was saved and you do not need to start over. Keep the Weber app closed and phone or tablet Bluetooth off, wake the hub, then try pairing again.",
+        "description": "**What happened:** {reason}\n\nNo Home Assistant integration entry was saved. Keep the Weber app closed and phone or tablet Bluetooth off, wake the hub, then try pairing again with the same prepared private connection.",
         "menu_options": {
           "retry_pairing": "Try pairing again",
           "choose_hub": "Choose another hub"
@@ -43,7 +43,7 @@
       },
       "cloud_not_linked": {
         "title": "The hub is paired, but Weber Cloud has not linked it",
-        "description": "Local pairing succeeded. Home Assistant reached Weber Cloud and checked automatically for up to five minutes, but the new connection was not given access to this hub. You do not need to approve the hub again. If the hub was just set up again in the Weber app, check once more.",
+        "description": "Local pairing succeeded. Home Assistant reached Weber Cloud and checked automatically for up to five minutes, but the new connection was not given access to this hub. You do not need to approve the hub again. Turn off phone or tablet Bluetooth and confirm the hub is online in the Weber app; if it is offline there too, restore the hub's Wi-Fi before checking again.",
         "menu_options": {
           "retry_cloud": "Check Weber Cloud again — up to 5 minutes",
           "start_over": "Start over"
@@ -51,7 +51,7 @@
       },
       "cloud_unavailable": {
         "title": "Weber Cloud could not be reached",
-        "description": "Local pairing succeeded, but Home Assistant could not complete the online check. The hub does not need approval again. Confirm Home Assistant has internet access and try again. If Weber Cloud is reachable, Home Assistant will wait up to five minutes for the hub.",
+        "description": "Local pairing succeeded, but Home Assistant could not complete the online check. The hub does not need approval again. Confirm Home Assistant has internet access. With phone or tablet Bluetooth off, also confirm the hub is online in the Weber app; if it is offline there too, restore the hub's Wi-Fi. Then try again.",
         "menu_options": {
           "retry_cloud": "Try the online check again — up to 5 minutes",
           "start_over": "Start over"
@@ -111,16 +111,27 @@
   "issues": {
     "connection_lost": {
       "title": "{name} lost its online connection",
-      "description": "Home Assistant could not receive new Weber Cloud data after repeated retries.",
       "fix_flow": {
         "step": {
           "confirm": {
             "title": "Retry {name}",
-            "description": "Make sure Home Assistant can reach the internet, then continue to test the existing private Weber connection."
+            "description": "Home Assistant has stopped receiving new Weber Cloud data. First turn Bluetooth off on the phone or tablet and confirm the hub appears online in the Weber app; this verifies the hub's Wi-Fi. Then confirm Home Assistant has internet access and continue to retry now."
           }
         },
         "error": {
-          "still_unavailable": "No new cloud data arrived. Check Home Assistant's internet connection and try again."
+          "still_unavailable": "No new data arrived. Check the hub's Wi-Fi in the Weber app with phone Bluetooth off, confirm Home Assistant can reach the internet, and try again.",
+          "entry_not_loaded": "The integration is not loaded. Reload it from its integration page, then return to this repair."
+        }
+      }
+    },
+    "credentials_rejected": {
+      "title": "{name} needs to be paired again",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Pair {name} again",
+            "description": "Weber rejected Home Assistant's generated companion credential. This is different from a temporary internet or hub Wi-Fi outage. Continue to remove this integration entry, then add **Weber Connect Unofficial** again and approve the new Home Assistant companion on the hub. Your Weber email and password are never required."
+          }
         }
       }
     }

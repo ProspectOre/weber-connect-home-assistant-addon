@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.weber_connect import weber_cloud_socket as socket
+from custom_components.weber_connect.weber_cloud import WeberCloudAuthError
 
 DEVICE_ID = "11" * 16
 APPLIANCE_ID = "22" * 16
@@ -36,9 +37,16 @@ class FakeCloudClient:
         self.messaging_host = "messaging.example"
         self.user_agent = "test-agent"
         self.wake_calls: list[str] = []
+        self.token_calls = 0
+        self.refresh_required = False
 
     def token(self) -> str:
+        self.token_calls += 1
+        self.refresh_required = False
         return "token"
+
+    def token_needs_refresh(self) -> bool:
+        return self.refresh_required
 
     def wake_messaging(self, appliance_id: str) -> None:
         self.wake_calls.append(appliance_id)
@@ -141,6 +149,30 @@ async def test_idle_socket_renews_subscription_once_before_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_expiring_token_rotates_socket_before_next_request() -> None:
+    first = FakeConnection([routed(0x80)])
+    second = FakeConnection([routed(0x80)])
+    cloud = FakeCloudClient()
+    session = socket.WeberCloudSession(
+        FakeHass(),  # type: ignore[arg-type]
+        cloud,
+        APPLIANCE_ID,
+        timeout=0.1,
+        subscribe_delay=0,
+    )
+    with patch.object(socket, "connect", AsyncMock(side_effect=[first, second])) as connect:
+        await session.async_request_status()
+        cloud.refresh_required = True
+        await session.async_request_status()
+
+    assert first.closed is True
+    assert len(first.sent) == 9
+    assert len(second.sent) == 9
+    assert cloud.token_calls == 2
+    assert connect.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_text_frames_are_ignored_and_rejection_is_actionable() -> None:
     connection = FakeConnection(["text", routed(0x87)])
     session = socket.WeberCloudSession(
@@ -152,6 +184,68 @@ async def test_text_frames_are_ignored_and_rejection_is_actionable() -> None:
     )
     with patch.object(socket, "connect", AsyncMock(return_value=connection)):
         with pytest.raises(socket.WeberCloudSocketError, match="rejected"):
+            await session.async_request_status()
+
+
+@pytest.mark.asyncio
+async def test_status_rejects_wrong_source_or_target_route() -> None:
+    wrong_source = socket.encode_routed_message("33" * 16, DEVICE_ID, 7, 0x80)
+    connection = FakeConnection([wrong_source])
+    session = socket.WeberCloudSession(
+        FakeHass(),  # type: ignore[arg-type]
+        FakeCloudClient(),
+        APPLIANCE_ID,
+        timeout=0.1,
+        subscribe_delay=0,
+    )
+    with patch.object(socket, "connect", AsyncMock(return_value=connection)):
+        with pytest.raises(socket.WeberCloudSocketError, match="unexpected device"):
+            await session.async_request_status()
+
+
+@pytest.mark.asyncio
+async def test_rejected_companion_token_is_classified_for_repair() -> None:
+    cloud = FakeCloudClient()
+    cloud.token = MagicMock(side_effect=WeberCloudAuthError("HTTP 403"))  # type: ignore[method-assign]
+    session = socket.WeberCloudSession(
+        FakeHass(),  # type: ignore[arg-type]
+        cloud,
+        APPLIANCE_ID,
+        timeout=0.1,
+        subscribe_delay=0,
+    )
+
+    with pytest.raises(socket.WeberCloudCredentialError, match="rejected"):
+        await session.async_request_status()
+
+
+@pytest.mark.asyncio
+async def test_rejected_wake_or_websocket_upgrade_is_classified() -> None:
+    cloud = FakeCloudClient()
+    cloud.wake_messaging = MagicMock(  # type: ignore[method-assign]
+        side_effect=WeberCloudAuthError("HTTP 403")
+    )
+    session = socket.WeberCloudSession(
+        FakeHass(),  # type: ignore[arg-type]
+        cloud,
+        APPLIANCE_ID,
+        timeout=0.1,
+        subscribe_delay=0,
+    )
+    with pytest.raises(socket.WeberCloudCredentialError, match="rejected"):
+        await session.async_request_status()
+
+    cloud = FakeCloudClient()
+    session = socket.WeberCloudSession(
+        FakeHass(),  # type: ignore[arg-type]
+        cloud,
+        APPLIANCE_ID,
+        timeout=0.1,
+        subscribe_delay=0,
+    )
+    rejected_upgrade = socket.InvalidStatus(SimpleNamespace(status_code=401))
+    with patch.object(socket, "connect", AsyncMock(side_effect=rejected_upgrade)):
+        with pytest.raises(socket.WeberCloudCredentialError, match="rejected"):
             await session.async_request_status()
 
 

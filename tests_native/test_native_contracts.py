@@ -63,9 +63,8 @@ def test_entity_identity_depends_only_on_hub_and_physical_slot() -> None:
 def test_private_identity_has_official_companion_shape() -> None:
     identity = generate_identity()
     assert len(identity.companion_id) == 32
-    assert len(identity.private_key) == 128
     assert len(identity.public_key) == 128
-    int(identity.companion_id + identity.private_key + identity.public_key, 16)
+    int(identity.companion_id + identity.public_key, 16)
 
 
 def test_weber_discovery_matches_company_ids_and_names() -> None:

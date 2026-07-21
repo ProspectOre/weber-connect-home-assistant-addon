@@ -1,8 +1,10 @@
 # Production readiness
 
-3.0 is release-ready only when automation and the physical matrix below pass.
-A passing matrix validates the documented equipment; it does not certify every
-Weber model, firmware, region, adapter, or ESPHome version.
+3.0 is release-ready only when every automated gate and the validated ESPHome
+proxy matrix below pass. Optional compatibility rows are explicitly marked and
+do not become claims until exercised. A passing matrix validates only the
+documented equipment; it does not certify every Weber model, firmware, region,
+adapter, account, router, or ESPHome version.
 
 ## Automated gates
 
@@ -22,7 +24,12 @@ Every release pull request must pass:
 
 ## Physical release matrix
 
-### Direct adapter
+### Extended compatibility: direct host adapter
+
+This is not a release claim for 3.0. The native transport uses Home Assistant's
+standard Bluetooth manager and supports its selected local adapter, but the
+final clean-install and endurance evidence used an ESPHome proxy. Complete this
+row before describing host-adapter-only operation as physically verified.
 
 1. Discover the hub through the Home Assistant host adapter.
 2. Fully close the Weber app and temporarily turn off Bluetooth on every phone
@@ -78,16 +85,29 @@ Run with the host adapter disabled:
   update.
 - Sleeping local hub: the four probe entities remain visible as `Unknown`; this
   expected idle state does not create a repair.
-- Pairing rejected or timed out: no config entry or private half-setup remains.
+- Pairing rejected or timed out: no config entry remains. Because the private
+  companion must be registered before physical approval, Weber may retain an
+  unused server-side companion record; Home Assistant retains no credential
+  after the flow is discarded.
+- Generated companion credential rejected: Home Assistant creates a distinct
+  repair that removes the unusable entry before a new physical pairing. A
+  temporary Home Assistant internet, Weber service, or hub Wi-Fi outage does
+  not remove the entry.
 - Home Assistant unload/reload: the selected cloud socket or GATT session
   closes and no background task survives the config entry.
 
 ## Current evidence
 
-The greenfield implementation currently has 104 passing automated tests and
-95.90% combined statement/branch coverage against the Home Assistant 2026.7
-test framework. Ruff, strict mypy, Bandit, release-contract validation, and
-whitespace validation pass locally.
+The local release candidate gate passes 111 tests with 95.89% combined
+statement/branch coverage against the Home Assistant 2026.7.2 test framework.
+Ruff, formatting, strict mypy, Bandit, dependency audit, Actionlint, release
+contract validation, and Home Assistant 2026.7.2 Hassfest all pass locally.
+
+The automated results are retained in
+[`docs/validation/3.0.0-rc-automated.json`](docs/validation/3.0.0-rc-automated.json).
+The physical assertions below are retained in
+[`docs/validation/3.0.0-rc-physical.json`](docs/validation/3.0.0-rc-physical.json)
+without device identifiers.
 
 Physical testing uses Home Assistant Yellow on Home Assistant 2026.7.2, a Weber
 Connect Hub `2.0.3_7398`, the Weber Android app `2.10.0.2439` on a Samsung Galaxy
@@ -98,13 +118,13 @@ discovery, and direct proxy reads have all been observed on that equipment.
 Discovery and physical-confirmation pairing passed through one active ESPHome
 Bluetooth proxy running ESPHome 2026.7.0. Home Assistant identified that proxy
 as the connection path. A later production test received live probe data while
-Home Assistant reported `Bluetooth Proxy ee608c (08:D1:F9:EE:60:8E)` as the
-hub's advertisement source at -48 dBm. The integration then returned
+Home Assistant reported the test ESPHome proxy as the hub's sole advertisement
+source at -48 dBm. The integration then returned
 successfully to the default phone-and-cloud mode.
 
-On July 19, 2026, the host hci0 entry was disabled and proxy ee608c was the only
-active Bluetooth route for an initial observation window. ESPHome recorded a
-connection to hub `70:91:8F:21:EA:7B`, a successful status read, a normal
+On July 19, 2026, the host hci0 entry was disabled and the test proxy was the
+only active Bluetooth route for an initial observation window. ESPHome recorded a
+connection to the test hub, a successful status read, a normal
 `reason=0x00` disconnect, and release of the proxy slot. One transient GATT
 `status=133` attempt then recovered automatically on retry. This established
 proxy-only routing, direct protocol compatibility, clean slot release, and
@@ -127,10 +147,10 @@ After the complete proxy test and restoration of the default mode, a fresh
 cloud session produced seven successful updates, zero failures, and a live
 Probe 1 reading of `22.7 °C`.
 
-For the final persistent proxy smoke test, hci0 was disabled and ESPHome proxy
-ee608c was the only active Bluetooth route. Once the Weber app was fully closed
-and Bluetooth was disabled on the tablet, ESPHome opened one connection to hub
-`70:91:8F:21:EA:7B` at 13:55:25 PDT and retained the active slot without a
+For the final persistent proxy smoke test, hci0 was disabled and the ESPHome
+proxy was the only active Bluetooth route. Once the Weber app was fully closed
+and Bluetooth was disabled on the tablet, ESPHome opened one connection to the
+test hub at 13:55:25 PDT and retained the active slot without a
 disconnect for more than two minutes. Native diagnostics increased from eight
 to fourteen successful updates while the same connection remained open;
 Probe 1 changed from `23.1 °C` to `23.0 °C`, the failure count did not
@@ -143,8 +163,8 @@ setup instruction as well as proxy-only routing, persistent slot ownership,
 fresh status requests, clean unload, and automatic retry on the tested setup.
 
 The final proxy-only endurance run started at approximately 16:20 PDT on July
-20 with the Weber app closed, tablet Bluetooth off, and hci0 disabled. ESPHome
-proxy ee608c was the sole active Bluetooth path. Over 61 minutes, native
+20 with the Weber app closed, tablet Bluetooth off, and hci0 disabled. The
+ESPHome proxy was the sole active Bluetooth path. Over 61 minutes, native
 diagnostics advanced by 350 successful updates and 16 transient failed
 attempts. The final sample had zero consecutive failures, no current error, and
 a live Probe 2 reading of `23.8 °C`. The proxy's Wi-Fi response time varied and
@@ -156,7 +176,7 @@ already completed nine successful updates, recovered from four transient
 attempts, reported zero consecutive failures, and exposed a live Probe 2
 reading of `23.2 °C`. No repair, re-pairing, config-entry reload, or manual
 transport recovery was required. Home Assistant's Bluetooth page continued to
-show proxy ee608c as the sole advertisement path.
+show the ESPHome proxy as the sole advertisement path.
 
 The test installation was then returned to the recommended state: hci0 enabled,
 Phone + Home Assistant selected, exactly four registered entities, no repair
@@ -190,7 +210,7 @@ path and therefore do **not** validate the final persistent WebSocket lifecycle.
 
 The final persistent companion-WebSocket endurance row, proxy-only endurance
 row, and proxy-only Home Assistant restart row have passed on the documented
-equipment. During the proxy-only run, ESPHome proxy ee608c was also deliberately
+equipment. During the proxy-only run, the ESPHome proxy was also deliberately
 rebooted while the integration owned its GATT session. The integration
 reconnected without a reload or repair; diagnostics advanced from nine
 successful updates and zero failures before the reboot to 31 successful
@@ -200,16 +220,18 @@ proxy reboot on the documented equipment.
 
 The production config entry was then deleted. Home Assistant removed the entry,
 device, all four entities, and stored private configuration. A clean re-add
-found the hub through proxy ee608c and completed physical approval, but Weber's
-association list never granted the newly generated companion access to the hub,
-including after repeated checks beyond five minutes. This failure was retained
-as evidence and investigated rather than treated as a successful clean install.
+found the hub through the ESPHome proxy and completed physical approval, but
+Weber's association list never granted the newly generated companion access to
+the hub, including after repeated checks beyond five minutes. This failure was
+retained as evidence and investigated rather than treated as a successful clean
+install.
 
 A second clean pairing attempt on July 20 confirmed that first-time pairing is
 supported through the active ESPHome proxy. The hub initially advertised but
 did not beep or present an approval request. After its probe was unplugged and
-the hub button was held for ten seconds to restart it, proxy ee608c established
-the connection, the hub beeped, and local pairing returned `CONFIRMED`. The
+the hub button was held for ten seconds to restart it, the ESPHome proxy
+established the connection, the hub beeped, and local pairing returned
+`CONFIRMED`. The
 generated companion again remained absent from Weber's association list. This
 separates the two behaviors: proxy-based physical pairing is verified on this
 equipment; that run still did not prove clean Weber Cloud association.
@@ -244,8 +266,8 @@ successful recovery and bounded failure paths.
 
 The final clean-install run used the corrected cloud-registration-before-BLE
 order and kept tablet Bluetooth disabled during pairing. Home Assistant
-generated and registered a new private companion, paired through ESPHome proxy
-ee608c, received physical approval from the hub, and found the exact hub in
+generated and registered a new private companion, paired through the ESPHome
+proxy, received physical approval from the hub, and found the exact hub in
 Weber's association list about 12 seconds after the cloud check began. Home
 Assistant created the native device without a Weber account login. After tablet
 Bluetooth was restored and the official app reopened, the app showed Probe 3 at
@@ -261,3 +283,12 @@ setup end to end.
 
 Two-proxy failover remains explicitly untested because a second proxy is not
 available. It may not be described as verified.
+
+The following also remain explicitly unverified on physical production
+hardware: host-adapter-only pairing/endurance, real wall-clock token renewal
+after the approximately 5.8-hour bearer lifetime, revoked-companion recovery,
+prolonged Weber outages, hub Wi-Fi changes, other hub models/firmware/regions,
+and installation from an actual `v3.0.0` HACS release archive. Token renewal,
+credential rejection, malformed-frame handling, and archive layout are covered
+by deterministic tests or local candidate packaging, but those are not a
+substitute for the named production scenarios.

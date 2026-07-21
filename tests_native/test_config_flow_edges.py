@@ -32,8 +32,8 @@ from custom_components.weber_connect.weber_cloud import CloudConfig, WeberCloudE
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 ADDRESS = "AA:BB:CC:DD:EE:FF"
-IDENTITY = CompanionIdentity("11" * 16, "22" * 64, "33" * 64)
-PAIRING = PairingResult(10, "44" * 16, "55" * 64, None)
+IDENTITY = CompanionIdentity("11" * 16, "33" * 64)
+PAIRING = PairingResult(10, "44" * 16)
 
 
 def test_cloud_association_retry_budget_is_five_minutes() -> None:
@@ -68,7 +68,9 @@ def flow(hass: object) -> WeberConnectConfigFlow:
 def test_weber_detection_and_discovery_labels_cover_adapter_and_proxy_paths(hass: object) -> None:
     instance = flow(hass)
     assert _is_weber(SimpleNamespace(manufacturer_data={0x0DF2: b"x"}, name="Unknown"))
-    assert _is_weber(SimpleNamespace(manufacturer_data={}, name="June Oven"))
+    assert _is_weber(SimpleNamespace(manufacturer_data={}, name="Weber Connect Hub"))
+    assert not _is_weber(SimpleNamespace(manufacturer_data={}, name="June Oven"))
+    assert not _is_weber(SimpleNamespace(manufacturer_data={}, name="Connect headphones"))
     assert not _is_weber(SimpleNamespace(manufacturer_data={}, name="Other"))
 
     direct = SimpleNamespace(address=ADDRESS, name=None, source="")

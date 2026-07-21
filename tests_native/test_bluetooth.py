@@ -11,10 +11,10 @@ from bleak_retry_connector import BleakOutOfConnectionSlotsError
 
 from custom_components.weber_connect import bluetooth as transport
 from custom_components.weber_connect.models import CompanionIdentity
-from custom_components.weber_connect.saber_frames import build_command_frame
+from custom_components.weber_connect.saber_frames import build_command_frame, crc8
 
 ADDRESS = "AA:BB:CC:DD:EE:FF"
-IDENTITY = CompanionIdentity("11" * 16, "22" * 64, "33" * 64)
+IDENTITY = CompanionIdentity("11" * 16, "33" * 64)
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +36,41 @@ def _pairing_confirmed() -> bytes:
 
 def _status() -> bytes:
     return build_command_frame(4, 10, 0x80, b"")
+
+
+def test_payload_rejects_bad_length_crc_tail_and_extra_bytes() -> None:
+    valid = _status()
+    assert transport._payload(valid)[0] == 0x80
+
+    bad_length = bytearray(valid)
+    bad_length[4:6] = (len(valid)).to_bytes(2, "little")
+    with pytest.raises(transport.WeberBluetoothError, match="transport"):
+        transport._payload(bytes(bad_length))
+
+    bad_crc = bytearray(valid)
+    bad_crc[-2] ^= 0xFF
+    with pytest.raises(transport.WeberBluetoothError, match="corrupted"):
+        transport._payload(bytes(bad_crc))
+
+    bad_tail = bytearray(valid)
+    bad_tail[-1] = 0
+    with pytest.raises(transport.WeberBluetoothError, match="corrupted"):
+        transport._payload(bytes(bad_tail))
+
+    with pytest.raises(transport.WeberBluetoothError, match="transport"):
+        transport._payload(valid + b"extra")
+
+    envelope_extra = bytearray(valid)
+    envelope_extra[4:6] = (int.from_bytes(valid[4:6], "little") + 1).to_bytes(2, "little")
+    envelope_extra += b"extra"[:1]
+    with pytest.raises(transport.WeberBluetoothError, match="corrupted"):
+        transport._payload(bytes(envelope_extra))
+
+    encrypted = bytearray(valid)
+    encrypted[7] = 1
+    encrypted[-2] = crc8(bytes(encrypted[7:-2]))
+    with pytest.raises(transport.WeberBluetoothError, match="encrypted"):
+        transport._payload(bytes(encrypted))
 
 
 class FakeClient:
@@ -86,7 +121,6 @@ async def test_pairing_confirms_and_releases_proxy_connection(
         )
     assert result.message_version == 11
     assert result.appliance_id == bytes(range(16)).hex()
-    assert len(result.appliance_public_key.replace(":", "")) == 128
     assert client.disconnected
     assert any(uuid == transport.COMMAND_UUID for uuid, _data, _response in client.writes)
     clear_advertisement_history.assert_called_once_with(  # type: ignore[attr-defined]
@@ -402,6 +436,12 @@ async def test_persistent_session_callbacks_and_disconnect_wake() -> None:
     session._handle_status(transport.STATUS_UUID, bytearray(_status()))
     assert statuses[0]["kind"] == "cook_session_status"
     assert session._received.is_set()
+
+    session._received.clear()
+    corrupted = bytearray(_status())
+    corrupted[-2] ^= 0xFF
+    session._handle_status(transport.STATUS_UUID, corrupted)
+    assert not session._received.is_set()
 
     session._wake.clear()
     session._handle_disconnect(FakeClient())

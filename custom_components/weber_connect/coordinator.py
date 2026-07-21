@@ -143,11 +143,12 @@ class WeberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_successful_update = datetime.now(timezone.utc).isoformat()
         self.consecutive_failures = 0
         self._status_event.set()
-        ir.async_delete_issue(
-            self.hass,
-            DOMAIN,
-            f"connection_lost_{self.entry.entry_id}",
-        )
+        for issue_prefix in ("connection_lost", "credentials_rejected"):
+            ir.async_delete_issue(
+                self.hass,
+                DOMAIN,
+                f"{issue_prefix}_{self.entry.entry_id}",
+            )
         self.async_set_updated_data(normalize_state(status, source=self.source, connected=True))
 
     @callback
@@ -159,7 +160,34 @@ class WeberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.consecutive_failures += 1
         if self.consecutive_failures >= OFFLINE_FAILURE_THRESHOLD:
             self.async_set_updated_data(normalize_state(None, source=self.source, connected=False))
+        if self.source == "cloud" and self.cloud_session is not None:
+            if self.cloud_session.error_kind == "credentials":
+                ir.async_delete_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"connection_lost_{self.entry.entry_id}",
+                )
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"credentials_rejected_{self.entry.entry_id}",
+                    data={"entry_id": self.entry.entry_id},
+                    is_fixable=True,
+                    is_persistent=True,
+                    severity=ir.IssueSeverity.ERROR,
+                    translation_key="credentials_rejected",
+                    translation_placeholders={"name": self.entry.title},
+                )
+                return
         if self.source != "cloud" or self.consecutive_failures < REPAIR_FAILURE_THRESHOLD:
+            return
+        if (
+            ir.async_get(self.hass).async_get_issue(
+                DOMAIN,
+                f"credentials_rejected_{self.entry.entry_id}",
+            )
+            is not None
+        ):
             return
         ir.async_create_issue(
             self.hass,

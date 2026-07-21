@@ -35,19 +35,21 @@ for a Weber email/password and does not copy a phone secret. Pairing still
 requires physical access and confirmation on the hub.
 
 The app-global Weber client values in source identify Weber's application, not
-an individual user. The generated companion password, key material, and bearer
-token are sensitive per-install credentials.
+an individual user. The generated companion password, transient pairing value,
+and bearer token are sensitive per-install credentials.
 
 Weber's cloud API is private and undocumented. The default **Phone + Home
-Assistant** mode sends
-authentication, association, cook-history, live-session, and program-detail
-requests to Weber. Remote commands are separately opt-in and limited to
-confirming or stopping an active cook and resetting an existing timer.
+Assistant** mode sends only companion registration/authentication, exact-hub
+association checks, messaging wake-up, read-only status subscription, and
+current-status requests to Weber. 3.0 has no cook-history, recipe/program,
+instruction, timer, target, or remote-control request path.
 
 The integration does not configure Wi-Fi, install or start recipes, change
 targets, ignite appliances, or change grill mode. Weber exposes no supported
 companion-revocation API; deleting the Home Assistant config entry removes the
 local credential but may not remove Weber's server-side companion record.
+The same applies when setup is abandoned after cloud registration but before
+the config entry is created.
 
 ## Supply chain
 

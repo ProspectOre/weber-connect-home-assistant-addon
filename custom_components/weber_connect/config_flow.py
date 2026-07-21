@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -48,6 +49,10 @@ _CLOUD_ASSOCIATION_MAX_WAIT = 300.0
 _CLOUD_ASSOCIATION_POLL_INTERVAL = 10.0
 _CLOUD_PROGRESS_REFRESH_INTERVAL = 1.0
 _CLOUD_REQUEST_TIMEOUT = 5.0
+_WEBER_NAME_RE = re.compile(
+    r"^(?:weber(?: connect| smart| grill)?|connect hub)(?:\b|[-_ ])",
+    re.IGNORECASE,
+)
 
 
 class WeberCloudAssociationPending(WeberCloudError):
@@ -64,8 +69,8 @@ def _is_weber(info: Any) -> bool:
     manufacturer_data = getattr(info, "manufacturer_data", {}) or {}
     if any(company_id in WEBER_COMPANY_IDS for company_id in manufacturer_data):
         return True
-    name = str(getattr(info, "name", "") or "").lower()
-    return any(token in name for token in ("weber", "connect", "june"))
+    name = str(getattr(info, "name", "") or "").strip()
+    return _WEBER_NAME_RE.match(name) is not None
 
 
 class WeberConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
