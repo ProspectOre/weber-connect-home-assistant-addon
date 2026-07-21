@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -119,6 +120,7 @@ async def test_first_status_subscribes_once_and_next_status_reuses_socket() -> N
     assert cloud.wake_calls == [APPLIANCE_ID]
     connect.assert_awaited_once()
     assert connect.await_args.kwargs["proxy"] is None
+    assert isinstance(connect.await_args.kwargs["ssl"], ssl.SSLContext)
     assert session.received_types == [0x80, 0x80]
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 import struct
 import time
 from collections.abc import Callable
@@ -138,6 +139,7 @@ class WeberCloudSession:
             )
         except Exception:
             LOGGER.debug("Cloud messaging wake-up failed", exc_info=True)
+        ssl_context = await self.hass.async_add_executor_job(ssl.create_default_context)
         self._connection = await connect(
             f"wss://{self.cloud_client.messaging_host}{SOCKET_PATH}",
             additional_headers={"Authorization": f"Bearer {token}"},
@@ -149,6 +151,7 @@ class WeberCloudSession:
             compression=None,
             max_size=1024 * 1024,
             proxy=None,
+            ssl=ssl_context,
         )
         self._subscribed = False
         return self._connection
