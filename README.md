@@ -17,8 +17,8 @@ Version 3.0 is one native Home Assistant integration:
 This project is not affiliated with, endorsed by, or supported by Weber.
 
 > [!IMPORTANT]
-> 3.0 is an unreleased release candidate. On the equipment below, a clean
-> installation generated its own private companion, paired through an ESPHome
+> On the equipment below, a clean 3.0 installation generated its own private
+> companion, paired through an ESPHome
 > proxy, appeared in Weber Cloud in about 12 seconds, and immediately delivered
 > native probe entities while the Weber app was open. The 70-minute app/cloud
 > session, one-hour proxy-only session, proxy reboot, and proxy-only Home
@@ -27,7 +27,7 @@ This project is not affiliated with, endorsed by, or supported by Weber.
 
 ## Install
 
-3.0 will be installed as a HACS custom integration:
+3.0 is installed as a HACS custom integration:
 
 1. Open **HACS → Integrations → ⋮ → Custom repositories**.
 2. Add this repository as category **Integration**:

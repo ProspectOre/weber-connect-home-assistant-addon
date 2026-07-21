@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.0.0 — Unreleased
+## 3.0.0 — 2026-07-21
 
 - Introduced a native Home Assistant custom integration with automatic device
   discovery and native entities.
