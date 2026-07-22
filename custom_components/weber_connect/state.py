@@ -15,14 +15,16 @@ def normalize_state(
     *,
     source: str,
     connected: bool,
+    last_successful_update: str | None = None,
 ) -> dict[str, Any]:
-    """Return the four stable probe slots and minimal support metadata."""
+    """Return the four stable probe slots and connection context."""
 
     raw = status or {}
     state: dict[str, Any] = {
         "updated_at": _utc_now(),
         "connected": connected,
         "source": source,
+        "last_successful_update": last_successful_update,
     }
     probes = raw.get("probes")
     if not isinstance(probes, list):

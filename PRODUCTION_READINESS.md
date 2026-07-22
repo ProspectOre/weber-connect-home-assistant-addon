@@ -97,7 +97,7 @@ Run with the host adapter disabled:
 
 ## Current evidence
 
-The local release candidate gate passes 112 tests with 95.88% combined
+The local release candidate gate passes 110 tests with 96.06% combined
 statement/branch coverage against the Home Assistant 2026.7.2 test framework.
 Ruff, formatting, strict mypy, Bandit, dependency audit, Actionlint, release
 contract validation, and Home Assistant 2026.7.2 Hassfest all pass locally.
@@ -178,8 +178,8 @@ transport recovery was required. Home Assistant's Bluetooth page continued to
 show the ESPHome proxy as the sole advertisement path.
 
 The test installation was then returned to the recommended state: hci0 enabled,
-Phone + Home Assistant selected, exactly four registered entities, no repair
-attention, and a healthy cloud transport.
+Phone + Home Assistant selected, exactly four registered probe-temperature
+entities, no repair attention, and a healthy cloud transport.
 
 All four app/cook combinations were exercised after restoration: app closed
 with no cook, app open with no cook, app open with an active cook, and app
@@ -218,7 +218,8 @@ error afterward. Probe 2 resumed at `23.8 °C`. This verifies recovery from one
 proxy reboot on the documented equipment.
 
 The production config entry was then deleted. Home Assistant removed the entry,
-device, all four entities, and stored private configuration. A clean re-add
+device, all four probe-temperature entities, and stored private configuration.
+A clean re-add
 found the hub through the ESPHome proxy and completed physical approval, but
 Weber's association list never granted the newly generated companion access to
 the hub, including after repeated checks beyond five minutes. This failure was
@@ -279,6 +280,15 @@ error, and Probe 3 at `23.3 °C`. The device page contained exactly four stable
 probe-temperature entities. This closes the clean-install cloud-association
 release blocker on the documented equipment and validates the intended default
 setup end to end.
+
+Version 3.0.2 adds two enabled-by-default connection-context entities without
+changing those four probe entities: a connectivity binary sensor with the
+active Weber Cloud or Bluetooth method, and a timestamp for the most recent
+successful update. Their state, icon, attributes, timestamp parsing, offline
+visibility, six-entity setup contract, and cleanup of orphaned pre-3.0.1
+connection-loss repairs are covered by automated tests. The physical endurance
+evidence above validates the transport data that feeds them; the 3.0.2 entity
+presentation itself is an automated validation claim.
 
 The exact post-audit candidate was then installed and restarted for one final
 proxy-only regression check. With hci0 disabled, the Weber app fully closed,

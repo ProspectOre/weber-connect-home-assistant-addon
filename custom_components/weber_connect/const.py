@@ -19,4 +19,4 @@ CONF_PROBES: Final = "probes"
 CONF_PROBE_NAME_PREFIX: Final = "probe_name_"
 
 WEBER_COMPANY_IDS: Final = frozenset({0x0DF2, 0x07C5})
-PLATFORMS: Final = ("sensor",)
+PLATFORMS: Final = ("binary_sensor", "sensor")

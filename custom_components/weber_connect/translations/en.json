@@ -122,7 +122,15 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      }
+    },
     "sensor": {
+      "last_successful_update": {
+        "name": "Last successful update"
+      },
       "probe_temperature": {
         "name": "Probe {number}"
       },

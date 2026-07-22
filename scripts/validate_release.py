@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION = ROOT / "custom_components" / "weber_connect"
-VERSION = "3.0.1"
+VERSION = "3.0.2"
 DOMAIN = "weber_connect"
 
 
@@ -175,8 +175,8 @@ def check_privacy_and_scope() -> None:
             if line.startswith("PLATFORMS:")
         )
     )
-    if platforms != ("sensor",):
-        fail("3.0 must expose only the four probe temperature sensors")
+    if platforms != ("binary_sensor", "sensor"):
+        fail("3.0 must expose its probe sensors and connection context")
     evidence = load_json(ROOT / "docs" / "validation" / "3.0.0-rc-physical.json")
     evidence_text = json.dumps(evidence)
     if evidence.get("identifiers") != "redacted":

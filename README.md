@@ -7,7 +7,8 @@ Version 3.0 is one native Home Assistant integration:
 - automatic Bluetooth discovery through local adapters and active ESPHome proxies;
 - one physically confirmed setup with no Weber email, password, phone secret, or packet capture;
 - native devices and entities—no MQTT broker or separate control panel;
-- exactly four stable probe temperature entities—one for each physical slot;
+- exactly four stable probe temperature entities—one for each physical slot—
+  plus clear connection and last-update context;
 - phone + Home Assistant by default: the Weber app may own Bluetooth while
   Home Assistant follows probe temperatures through its own Weber Cloud
   connection;
@@ -59,8 +60,9 @@ has been validated end to end on the equipment below.
 
 3.0 is a clean native integration, not an in-place add-on upgrade. In the 2.1
 panel, use **Forget This Hub**, then stop and uninstall the add-on before
-installing 3.0. The native integration creates a new device and four native
-sensor entities; it does not import the add-on's MQTT entities or settings. If
+installing 3.0. The native integration creates a new device, four probe
+temperature entities, and two connection-context entities; it does not import
+the add-on's MQTT entities or settings. If
 an old unavailable MQTT device remains, remove its retained discovery records
 from the broker and delete that MQTT device from Home Assistant. The add-on and
 its MQTT broker are not needed by 3.0.
@@ -93,8 +95,14 @@ quietly without raising a Home Assistant repair. Battery level, probe type, and
 probe state remain attributes on that same entity instead of creating
 redundant entities.
 
+Two additional context entities are enabled by default. **Connection** reports
+**Connected** or **Disconnected** and identifies whether Home Assistant is
+using **Weber Cloud** or **Bluetooth**. **Last successful update** preserves the
+time fresh hub data most recently arrived, including while the hub is sleeping
+or powered off.
+
 3.0 is deliberately read-only. Recipe text, instructions, cook controls,
-cavities, timers, and technical connection-status entities are not exposed.
+cavities, and timers are not exposed.
 
 ## Requirements
 

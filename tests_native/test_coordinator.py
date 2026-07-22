@@ -138,12 +138,14 @@ async def test_status_publishes_four_slot_state_and_clears_failure(hass: object)
 def test_three_failures_clear_stale_temperature_to_honest_unknown(hass: object) -> None:
     coordinator, _transport = _coordinator(hass, cloud=False)
     coordinator._async_status({"probes": [{"probe_number": 4, "probe_temp_c": 30.0}]})
+    last_successful_update = coordinator.data["last_successful_update"]
     for _ in range(coordinator_module.OFFLINE_FAILURE_THRESHOLD - 1):
         coordinator._async_error("hub sleeping")
     assert coordinator.data["probe_4_temperature"] == 30.0
     coordinator._async_error("hub sleeping")
     assert coordinator.data["probe_4_temperature"] is None
     assert coordinator.data["connected"] is False
+    assert coordinator.data["last_successful_update"] == last_successful_update
     assert coordinator.failed_updates == coordinator_module.OFFLINE_FAILURE_THRESHOLD
 
 
@@ -198,6 +200,8 @@ def test_bluetooth_advertisement_wakes_existing_session_only(hass: object) -> No
 async def test_start_and_close_own_exactly_one_transport_task(hass: object) -> None:
     coordinator, transport = _coordinator(hass, cloud=False)
     legacy_issue = f"connection_lost_{coordinator.entry.entry_id}"
+    orphaned_legacy_issue = "connection_lost_removed-entry"
+    credential_issue = f"credentials_rejected_{coordinator.entry.entry_id}"
     ir.async_create_issue(
         hass,
         "weber_connect",
@@ -205,6 +209,22 @@ async def test_start_and_close_own_exactly_one_transport_task(hass: object) -> N
         is_fixable=True,
         severity=ir.IssueSeverity.WARNING,
         translation_key="connection_lost",
+    )
+    ir.async_create_issue(
+        hass,
+        "weber_connect",
+        orphaned_legacy_issue,
+        is_fixable=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="connection_lost",
+    )
+    ir.async_create_issue(
+        hass,
+        "weber_connect",
+        credential_issue,
+        is_fixable=True,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key="credentials_rejected",
     )
     assert ir.async_get(hass).async_get_issue("weber_connect", legacy_issue) is not None
     cancel_callback = MagicMock()
@@ -218,6 +238,8 @@ async def test_start_and_close_own_exactly_one_transport_task(hass: object) -> N
     await transport.started.wait()
     assert coordinator._transport_task is not None
     assert ir.async_get(hass).async_get_issue("weber_connect", legacy_issue) is None
+    assert ir.async_get(hass).async_get_issue("weber_connect", orphaned_legacy_issue) is None
+    assert ir.async_get(hass).async_get_issue("weber_connect", credential_issue) is not None
     register.assert_called_once()
 
     await coordinator.async_close()
