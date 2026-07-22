@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from custom_components.weber_connect.binary_sensor import WeberConnectionBinarySensor
+from custom_components.weber_connect.binary_sensor import (
+    async_setup_entry as async_setup_binary_sensor_entry,
+)
 from custom_components.weber_connect.bluetooth import generate_identity
 from custom_components.weber_connect.config_flow import _is_weber
 from custom_components.weber_connect.const import (
@@ -33,7 +38,7 @@ def test_manifest_and_hacs_contract() -> None:
     manifest = json.loads((ROOT / "custom_components" / DOMAIN / "manifest.json").read_text())
     hacs = json.loads((ROOT / "hacs.json").read_text())
     assert manifest["domain"] == DOMAIN
-    assert manifest["version"] == "3.0.1"
+    assert manifest["version"] == "3.0.2"
     assert manifest["config_flow"] is True
     assert manifest["dependencies"] == ["bluetooth_adapters"]
     assert manifest["iot_class"] == "cloud_polling"
@@ -105,14 +110,16 @@ def test_normalized_state_contains_only_support_metadata_and_probe_slots() -> No
     assert "timer_1_remaining" not in state
 
 
-def test_sensor_surface_contains_exactly_four_permanent_probe_slots() -> None:
+def test_sensor_surface_contains_four_probe_slots_and_last_update() -> None:
     descriptions = {description.key: description for description in SENSORS}
-    assert set(descriptions) == {f"probe_{number}_temperature" for number in range(1, 5)}
+    probe_keys = {f"probe_{number}_temperature" for number in range(1, 5)}
+    assert set(descriptions) == probe_keys | {"last_successful_update"}
+    assert len(probe_keys) == 4
     assert all(description.value_fn({}) is None for description in descriptions.values())
 
 
 @pytest.mark.asyncio
-async def test_sensor_platform_adds_only_four_entities() -> None:
+async def test_sensor_platform_adds_probe_and_last_update_entities() -> None:
     coordinator = SimpleNamespace(
         data={},
         options=WeberOptions(),
@@ -132,9 +139,70 @@ async def test_sensor_platform_adds_only_four_entities() -> None:
         lambda entities: batches.append(list(entities)),
     )
     assert len(batches) == 1
-    assert {entity.entity_description.key for entity in batches[0]} == {
-        f"probe_{number}_temperature" for number in range(1, 5)
+    probe_keys = {f"probe_{number}_temperature" for number in range(1, 5)}
+    assert {entity.entity_description.key for entity in batches[0]} == probe_keys | {
+        "last_successful_update"
     }
+
+
+@pytest.mark.asyncio
+async def test_binary_sensor_platform_adds_connection_entity() -> None:
+    coordinator = SimpleNamespace(
+        data={"connected": True, "source": "cloud"},
+        options=WeberOptions(),
+        last_update_success=True,
+    )
+    entry = SimpleNamespace(
+        runtime_data=SimpleNamespace(coordinator=coordinator),
+        unique_id="AA:BB:CC:DD:EE:FF",
+        entry_id="entry",
+        title="Weber Connect Hub",
+        data={"address": "AA:BB:CC:DD:EE:FF"},
+    )
+    batches: list[list[WeberConnectionBinarySensor]] = []
+    await async_setup_binary_sensor_entry(
+        SimpleNamespace(),
+        entry,
+        lambda entities: batches.append(list(entities)),
+    )
+
+    assert len(batches) == 1
+    assert len(batches[0]) == 1
+    entity = batches[0][0]
+    assert entity.is_on is True
+    assert entity.available is True
+    assert entity.icon == "mdi:cloud-check-outline"
+    assert entity.extra_state_attributes == {"connection_method": "Weber Cloud"}
+
+    coordinator.data = {"connected": False, "source": "cloud"}
+    assert entity.is_on is False
+    assert entity.icon == "mdi:cloud-off-outline"
+
+    coordinator.data = {"connected": True, "source": "bluetooth"}
+    assert entity.is_on is True
+    assert entity.icon == "mdi:bluetooth-connect"
+    assert entity.extra_state_attributes == {"connection_method": "Bluetooth"}
+
+
+def test_last_successful_update_is_an_always_visible_timestamp() -> None:
+    timestamp = "2026-07-22T15:04:05+00:00"
+    coordinator = SimpleNamespace(
+        data={"last_successful_update": timestamp},
+        options=WeberOptions(),
+        last_update_success=False,
+    )
+    entry = SimpleNamespace(
+        unique_id="AA:BB:CC:DD:EE:FF",
+        entry_id="entry",
+        title="Weber Connect Hub",
+        data={"address": "AA:BB:CC:DD:EE:FF"},
+    )
+    description = next(row for row in SENSORS if row.key == "last_successful_update")
+    entity = WeberSensor(coordinator, entry, description)
+
+    assert entity.native_value == datetime.fromisoformat(timestamp)
+    assert entity.available is True
+    assert entity.extra_state_attributes is None
 
 
 def test_named_probe_preserves_slot_and_single_entity_semantics() -> None:

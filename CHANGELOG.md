@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.2 — 2026-07-22
+
+- Added an enabled-by-default **Connection** entity that reports
+  Connected/Disconnected, identifies Weber Cloud or Bluetooth, and uses a
+  transport-aware icon.
+- Added an enabled-by-default **Last successful update** timestamp so routine
+  hub sleep or power-off retains useful context about the latest fresh data.
+- Remove every retired connection-loss repair on startup, including stale
+  repairs left behind by an earlier deleted config entry.
+- Kept the established surface of exactly four stable probe-temperature
+  entities unchanged.
+
 ## 3.0.1 — 2026-07-21
 
 - Treat a sleeping, powered-off, or temporarily unreachable hub as normal idle

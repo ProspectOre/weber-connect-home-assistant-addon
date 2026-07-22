@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -33,6 +34,13 @@ def _value(key: str) -> Callable[[dict[str, Any]], Any]:
     return lambda data: data.get(key)
 
 
+def _timestamp_value(data: dict[str, Any]) -> datetime | None:
+    value = data.get("last_successful_update")
+    if not isinstance(value, str):
+        return None
+    return datetime.fromisoformat(value)
+
+
 SENSORS: tuple[WeberSensorDescription, ...] = (
     *tuple(
         WeberSensorDescription(
@@ -46,6 +54,13 @@ SENSORS: tuple[WeberSensorDescription, ...] = (
             value_fn=_value(f"probe_{number}_temperature"),
         )
         for number in range(1, 5)
+    ),
+    WeberSensorDescription(
+        key="last_successful_update",
+        translation_key="last_successful_update",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-check-outline",
+        value_fn=_timestamp_value,
     ),
 )
 
@@ -110,11 +125,15 @@ class WeberSensor(WeberEntity, SensorEntity):
         key = self.entity_description.key
         if key.startswith("probe_") and key.endswith("_temperature"):
             return True
+        if key == "last_successful_update":
+            return True
         return super().available
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         key = self.entity_description.key
+        if not key.startswith("probe_"):
+            return None
         number = key.split("_")[1]
         return {
             "probe_number": int(number),

@@ -102,7 +102,12 @@ class WeberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def initial_state(self) -> dict[str, Any]:
         """Return the complete idle entity shape before the transport starts."""
 
-        return normalize_state(None, source=self.source, connected=False)
+        return normalize_state(
+            None,
+            source=self.source,
+            connected=False,
+            last_successful_update=self.last_successful_update,
+        )
 
     def async_start(self) -> None:
         """Start the one entry-owned transport task."""
@@ -110,12 +115,12 @@ class WeberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._transport_task is not None:
             return
         # Versions before 3.0.1 raised a repair after routine cloud outages.
-        # A powered-off hub is normal, so clear that retired issue at startup.
-        ir.async_delete_issue(
-            self.hass,
-            DOMAIN,
-            f"connection_lost_{self.entry.entry_id}",
-        )
+        # A powered-off hub is normal. Clear every retired issue at startup,
+        # including one orphaned when an earlier config entry was removed.
+        registry = ir.async_get(self.hass)
+        for domain, issue_id in tuple(registry.issues):
+            if domain == DOMAIN and issue_id.startswith("connection_lost_"):
+                ir.async_delete_issue(self.hass, domain, issue_id)
         if self.bluetooth_session is not None:
             self._cancel_bluetooth_callback = bluetooth.async_register_callback(
                 self.hass,
@@ -152,7 +157,14 @@ class WeberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             DOMAIN,
             f"credentials_rejected_{self.entry.entry_id}",
         )
-        self.async_set_updated_data(normalize_state(status, source=self.source, connected=True))
+        self.async_set_updated_data(
+            normalize_state(
+                status,
+                source=self.source,
+                connected=True,
+                last_successful_update=self.last_successful_update,
+            )
+        )
 
     @callback
     def _async_error(self, message: str) -> None:
@@ -162,7 +174,14 @@ class WeberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.failed_updates += 1
         self.consecutive_failures += 1
         if self.consecutive_failures >= OFFLINE_FAILURE_THRESHOLD:
-            self.async_set_updated_data(normalize_state(None, source=self.source, connected=False))
+            self.async_set_updated_data(
+                normalize_state(
+                    None,
+                    source=self.source,
+                    connected=False,
+                    last_successful_update=self.last_successful_update,
+                )
+            )
         if self.source == "cloud" and self.cloud_session is not None:
             if self.cloud_session.error_kind == "credentials":
                 ir.async_create_issue(
